@@ -4,7 +4,6 @@ import { useMaps } from './hooks/useMaps.js';
 import { useMap } from './hooks/useMap.js';
 import { usePins } from './hooks/usePins.js';
 import Rail from './components/Rail.jsx';
-import MapSwitcher from './components/MapSwitcher.jsx';
 import SearchAndFilters from './components/SearchAndFilters.jsx';
 import Constellation from './components/Constellation.jsx';
 import PinGrid from './components/PinGrid.jsx';
@@ -23,6 +22,8 @@ const DEFAULT_TAGS = {
   restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
 };
 
+// Parses whatever the OS share sheet handed over at /share?title=&text=&url=
+// per the GET share_target in public/manifest.json.
 function readShareParams() {
   if (window.location.pathname !== '/share') return null;
   const params = new URLSearchParams(window.location.search);
@@ -35,9 +36,6 @@ function readShareParams() {
 
 const LAST_MAP_KEY = 'mappin.lastMapId';
 
-// ⭐⭐⭐ ADD THIS ⭐⭐⭐
-const MAIN_MAP_ID = "5XnxTgQkgYriL0HjZvzv";
-
 export default function App() {
   const { user, signIn, signOut } = useAuth();
   const { maps, loading: mapsLoading, createMap } = useMaps(user?.email);
@@ -47,24 +45,14 @@ export default function App() {
     if (currentMapId) localStorage.setItem(LAST_MAP_KEY, currentMapId);
   }, [currentMapId]);
 
-  // ⭐⭐⭐ UPDATED LOGIC ⭐⭐⭐
+  // If the remembered map isn't in this user's list (or none remembered yet),
+  // fall back to their first map. If they have none at all, create one.
   useEffect(() => {
     if (!user || mapsLoading) return;
-
     if (maps.length === 0) {
       createMap(user.uid, user.email, 'My Map').then(setCurrentMapId);
       return;
     }
-
-    // Prefer the main map if it exists
-    if (maps.some((m) => m.id === MAIN_MAP_ID)) {
-      if (currentMapId !== MAIN_MAP_ID) {
-        setCurrentMapId(MAIN_MAP_ID);
-      }
-      return;
-    }
-
-    // Otherwise fall back to first map
     if (!currentMapId || !maps.some((m) => m.id === currentMapId)) {
       setCurrentMapId(maps[0].id);
     }
@@ -141,19 +129,18 @@ export default function App() {
 
   return (
     <div className="shell">
-      <Rail view={view} setView={setView} onOpenTags={() => setTagManagerOpen(true)} onOpenShare={() => setShareOpen(true)} onSignOut={signOut} />
+      <Rail
+        view={view} setView={setView}
+        maps={maps} currentMapId={currentMapId}
+        onSwitchMap={setCurrentMapId}
+        onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
+        onOpenTags={() => setTagManagerOpen(true)} onOpenShare={() => setShareOpen(true)} onSignOut={signOut}
+      />
       <main>
-        <MapSwitcher
-          maps={maps}
-          currentMapId={currentMapId}
-          onSwitch={setCurrentMapId}
-          onCreate={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-        />
-
         {view === 'map' && (
           <section className="panel">
             <Constellation pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId}>
-              <SearchAndFilters floating search={search} setSearch={setSearch} tags={tags} pins={pins}
+              <SearchAndFilters floating mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
                 activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
             </Constellation>
           </section>
@@ -162,7 +149,7 @@ export default function App() {
         {view === 'list' && (
           <section className="panel">
             <div style={{ padding: '16px 22px 0' }}>
-              <SearchAndFilters search={search} setSearch={setSearch} tags={tags} pins={pins}
+              <SearchAndFilters mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
                 activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
             </div>
             <div className="panel-head">
