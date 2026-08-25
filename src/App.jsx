@@ -23,8 +23,6 @@ const DEFAULT_TAGS = {
   restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
 };
 
-// Parses whatever the OS share sheet handed over at /share?title=&text=&url=
-// per the GET share_target in public/manifest.json.
 function readShareParams() {
   if (window.location.pathname !== '/share') return null;
   const params = new URLSearchParams(window.location.search);
@@ -37,6 +35,9 @@ function readShareParams() {
 
 const LAST_MAP_KEY = 'mappin.lastMapId';
 
+// ⭐⭐⭐ ADD THIS ⭐⭐⭐
+const MAIN_MAP_ID = "5XnxTgQkgYriL0HjZvzv";
+
 export default function App() {
   const { user, signIn, signOut } = useAuth();
   const { maps, loading: mapsLoading, createMap } = useMaps(user?.email);
@@ -46,14 +47,24 @@ export default function App() {
     if (currentMapId) localStorage.setItem(LAST_MAP_KEY, currentMapId);
   }, [currentMapId]);
 
-  // If the remembered map isn't in this user's list (or none remembered yet),
-  // fall back to their first map. If they have none at all, create one.
+  // ⭐⭐⭐ UPDATED LOGIC ⭐⭐⭐
   useEffect(() => {
     if (!user || mapsLoading) return;
+
     if (maps.length === 0) {
       createMap(user.uid, user.email, 'My Map').then(setCurrentMapId);
       return;
     }
+
+    // Prefer the main map if it exists
+    if (maps.some((m) => m.id === MAIN_MAP_ID)) {
+      if (currentMapId !== MAIN_MAP_ID) {
+        setCurrentMapId(MAIN_MAP_ID);
+      }
+      return;
+    }
+
+    // Otherwise fall back to first map
     if (!currentMapId || !maps.some((m) => m.id === currentMapId)) {
       setCurrentMapId(maps[0].id);
     }
