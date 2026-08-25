@@ -4,6 +4,7 @@ export default function SearchAndFilters({ floating, search, setSearch, tags, pi
   const counts = {};
   Object.keys(tags).forEach((k) => { counts[k] = pins.filter((p) => p.tags?.includes(k)).length; });
 
+
   return (
     <div className={`controls-block ${floating ? 'floating' : 'inline'}`}>
       <div className="searchpill">
