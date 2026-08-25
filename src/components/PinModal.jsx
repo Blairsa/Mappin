@@ -15,6 +15,9 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
   const [fetching, setFetching] = useState(false);
   const [oembedHint, setOembedHint] = useState('');
 
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+
   useEffect(() => {
     if (!open) return;
     setName(initial?.name || '');
@@ -26,6 +29,7 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
     setRating(initial?.rating || 0);
     setSelectedTags(initial?.tags || []);
     setOembedHint('');
+    setSaveError(null);
   }, [open, initial]);
 
   if (!open) return null;
@@ -46,9 +50,21 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) return;
-    onSave({ name: name.trim(), address, placeId, geo, note: note.trim(), url: url.trim(), rating, tags: selectedTags });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // onSave (App.jsx) writes to Firestore and only resolves on success —
+      // previously this call wasn't awaited or caught, so any write failure
+      // (permissions, network, etc.) vanished as an unhandled rejection and
+      // the form just sat there with no feedback. Now it's actually surfaced.
+      await onSave({ name: name.trim(), address, placeId, geo, note: note.trim(), url: url.trim(), rating, tags: selectedTags });
+    } catch (err) {
+      setSaveError(err.message || 'Something went wrong saving this pin — check your Firestore rules and connection.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -60,26 +76,18 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
         </div>
         <div className="modal-body">
           <div className="field">
-            <label>Link (booking, menu, TikTok/YouTube/Instagram post…)</label>
-            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
-            <button className="btn-text" style={{ padding: '6px 0' }} onClick={handleFetch} disabled={!url || fetching}>
-              {fetching ? 'Fetching…' : 'Fetch details from link'}
-            </button>
-            {oembedHint && <div className="oembed-hint">{oembedHint}</div>}
-          </div>
-          <div className="field">
-            <label>Address</label>
+            <label>Name</label>
             <AddressAutocomplete onSelect={({ name: pName, address: pAddr, placeId: pid, lat, lng }) => {
+              setName(pName);
               setAddress(pAddr);
               setPlaceId(pid);
               setGeo(lat != null && lng != null ? { lat, lng } : null);
-              if (!name) setName(pName);
             }} />
-            {address && <div className="oembed-hint">Selected: {address}</div>}
-          </div>
-          <div className="field">
-            <label>Name</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name this place…" />
+            <input
+              type="text" value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="Or type a custom name…" style={{ marginTop: 8 }}
+            />
+            {address && <div className="oembed-hint">Address: {address}</div>}
           </div>
           <div className="field">
             <label>Your rating</label>
@@ -94,11 +102,11 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
             </div>
           </div>
           <div className="field">
-            <label>{rating === 0 ? "Why you're saving this" : 'Your notes'}</label>
+            <label>Description</label>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder={rating === 0 ? 'Booking details, table preference, the caption from the post…' : 'How was it? Would you go back?'}
+              placeholder="Why you're saving this, how it went, anything to remember…"
             />
           </div>
           <div className="field">
@@ -115,10 +123,21 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
               })}
             </div>
           </div>
+          <div className="field">
+            <label>Link (booking, menu, TikTok/YouTube/Instagram post…)</label>
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+            <button className="btn-text" style={{ padding: '6px 0' }} onClick={handleFetch} disabled={!url || fetching}>
+              {fetching ? 'Fetching…' : 'Fetch details from link'}
+            </button>
+            {oembedHint && <div className="oembed-hint">{oembedHint}</div>}
+          </div>
         </div>
         <div className="modal-actions">
+          {saveError && <div className="oembed-hint" style={{ color: 'var(--red)', flex: 1, alignSelf: 'center' }}>{saveError}</div>}
           <button className="btn-text" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave}>{iconSvg('check')}Save pin</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {iconSvg('check')}{saving ? 'Saving…' : 'Save pin'}
+          </button>
         </div>
       </div>
     </div>
