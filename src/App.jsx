@@ -13,7 +13,6 @@ import ShareModal from './components/ShareModal.jsx';
 import TagManager from './components/TagManager.jsx';
 import { iconSvg } from './lib/icons.jsx';
 import { latLngToPercent } from './lib/geo.js';
-import "./tools/importPins.js";
 
 
 const DEFAULT_TAGS = {
