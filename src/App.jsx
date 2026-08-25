@@ -93,7 +93,13 @@ export default function App() {
   }
 
   const tags = mapDoc.tags && Object.keys(mapDoc.tags).length ? mapDoc.tags : DEFAULT_TAGS;
-  if (!mapDoc.tags || !Object.keys(mapDoc.tags).length) updateTags(DEFAULT_TAGS);
+
+  useEffect(() => {
+    if (mapDoc && (!mapDoc.tags || !Object.keys(mapDoc.tags).length)) {
+      updateTags(DEFAULT_TAGS);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapDoc?.id, mapDoc?.tags]);
 
   const matchesSearch = (p) => {
     const q = search.trim().toLowerCase();
