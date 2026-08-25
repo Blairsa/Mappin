@@ -1,0 +1,69 @@
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, serverTimestamp } from "firebase/firestore";
+
+// 1. Your Firebase config
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "...",
+  projectId: "...",
+  storageBucket: "...",
+  messagingSenderId: "...",
+  appId: "..."
+};
+
+// 2. Init
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// 3. Paste your old pins here (I will generate this for you)
+const oldPins = []; 
+
+// 4. Helper: convert your old timestamp format
+function convertTimestamp(msOrString) {
+  if (!msOrString) return serverTimestamp();
+
+  // If it's a number (your old pins use ms timestamps)
+  if (typeof msOrString === "number") {
+    return new Date(msOrString);
+  }
+
+  // If it's a Firestore-style string ("25 August 2026 at 18:12:27 UTC+1")
+  return new Date(msOrString);
+}
+
+// 5. Import workflow
+async function importPins() {
+  for (const pin of oldPins) {
+    const newId = crypto.randomUUID();
+
+    await setDoc(doc(db, "maps/5XnxTgQkgYriLOHjZVzv/pins", newId), {
+      name: pin.name || "",
+      address: pin.address || "",
+      note: pin.note || "",
+      rating: pin.rating || 0,
+      tags: pin.tags || [],
+      url: pin.url || "",
+      placeId: pin.placeId || null,
+
+      geo: {
+        lat: pin.geo.lat,
+        lng: pin.geo.lng
+      },
+
+      // If your old pins don't have pos.x/y, generate a safe random position
+      pos: pin.pos || {
+        x: 20 + Math.random() * 60,
+        y: 20 + Math.random() * 55
+      },
+
+      addedBy: pin.addedBy || "unknown",
+      createdAt: convertTimestamp(pin.createdAt || pin.dateAdded)
+    });
+
+    console.log("Imported:", pin.name);
+  }
+
+  console.log("Done!");
+}
+
+importPins();
