@@ -22,9 +22,8 @@ const DEFAULT_TAGS = {
   restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
 };
 
-// Parses whatever the OS share sheet handed over at /share?title=&text=&url=
-// per the GET share_target in public/manifest.json.
 function readShareParams() {
+  if (typeof window === 'undefined') return null;
   if (window.location.pathname !== '/share') return null;
   const params = new URLSearchParams(window.location.search);
   return {
@@ -37,6 +36,10 @@ function readShareParams() {
 const LAST_MAP_KEY = 'mappin.lastMapId';
 
 export default function App() {
+  // -----------------------------
+  // ALL HOOKS MUST BE ABOVE ANY RETURN
+  // -----------------------------
+
   const { user, signIn, signOut } = useAuth();
   const { maps, loading: mapsLoading, createMap } = useMaps(user?.email);
 
@@ -45,8 +48,6 @@ export default function App() {
     if (currentMapId) localStorage.setItem(LAST_MAP_KEY, currentMapId);
   }, [currentMapId]);
 
-  // If the remembered map isn't in this user's list (or none remembered yet),
-  // fall back to their first map. If they have none at all, create one.
   useEffect(() => {
     if (!user || mapsLoading) return;
     if (maps.length === 0) {
@@ -77,6 +78,17 @@ export default function App() {
       : null
   );
 
+  // THIS HOOK MUST BE ABOVE ANY RETURN
+  useEffect(() => {
+    if (mapDoc && (!mapDoc.tags || !Object.keys(mapDoc.tags).length)) {
+      updateTags(DEFAULT_TAGS);
+    }
+  }, [mapDoc?.id, mapDoc?.tags, updateTags]);
+
+  // -----------------------------
+  // SAFE CONDITIONAL RETURNS
+  // -----------------------------
+
   if (user === undefined) return <div className="center-screen">Loading…</div>;
 
   if (!user) {
@@ -92,43 +104,62 @@ export default function App() {
     return <div className="center-screen">Loading your maps…</div>;
   }
 
-  const tags = mapDoc.tags && Object.keys(mapDoc.tags).length ? mapDoc.tags : DEFAULT_TAGS;
+  // -----------------------------
+  // MAIN RENDER
+  // -----------------------------
 
-  useEffect(() => {
-    if (mapDoc && (!mapDoc.tags || !Object.keys(mapDoc.tags).length)) {
-      updateTags(DEFAULT_TAGS);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapDoc?.id, mapDoc?.tags]);
+  const tags = mapDoc.tags && Object.keys(mapDoc.tags).length ? mapDoc.tags : DEFAULT_TAGS;
 
   const matchesSearch = (p) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
     return [p.name, p.address, p.note].filter(Boolean).some((f) => f.toLowerCase().includes(q));
   };
-  const matchesFilter = (p) => activeFilters.size === 0 || p.tags?.some((t) => activeFilters.has(t));
-  const toggleFilter = (key) => setActiveFilters((prev) => {
-    const next = new Set(prev);
-    next.has(key) ? next.delete(key) : next.add(key);
-    return next;
-  });
+
+  const matchesFilter = (p) =>
+    activeFilters.size === 0 || p.tags?.some((t) => activeFilters.has(t));
+
+  const toggleFilter = (key) =>
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
   const visiblePins = pins.filter(matchesSearch);
 
-  const addedByLabel = (uid) => (uid === user.uid ? (user.displayName || 'You') : 'Collaborator');
+  const addedByLabel = (uid) =>
+    uid === user.uid ? (user.displayName || 'You') : 'Collaborator';
 
-  const openAdd = () => { setEditingPin(null); setPinModalOpen(true); };
-  const openEdit = (pin) => { setEditingPin(pin); setPrefill(null); setPinModalOpen(true); setViewingPinId(null); };
+  const openAdd = () => {
+    setEditingPin(null);
+    setPinModalOpen(true);
+  };
+
+  const openEdit = (pin) => {
+    setEditingPin(pin);
+    setPrefill(null);
+    setPinModalOpen(true);
+    setViewingPinId(null);
+  };
 
   const handleSave = async (data) => {
-    const pos = data.geo ? latLngToPercent(data.geo.lat, data.geo.lng) : (editingPin?.pos || { x: 20 + Math.random() * 60, y: 20 + Math.random() * 55 });
+    const pos = data.geo
+      ? latLngToPercent(data.geo.lat, data.geo.lng)
+      : editingPin?.pos || { x: 20 + Math.random() * 60, y: 20 + Math.random() * 55 };
+
     if (editingPin) {
       await updatePin(editingPin.id, { ...data, pos });
     } else {
       await addPin({ ...data, pos }, user.uid);
     }
+
     setPinModalOpen(false);
     setPrefill(null);
-    if (window.location.pathname === '/share') window.history.replaceState({}, '', '/');
+
+    if (window.location.pathname === '/share') {
+      window.history.replaceState({}, '', '/');
+    }
   };
 
   const viewingPin = pins.find((p) => p.id === viewingPinId);
@@ -136,18 +167,37 @@ export default function App() {
   return (
     <div className="shell">
       <Rail
-        view={view} setView={setView}
-        maps={maps} currentMapId={currentMapId}
+        view={view}
+        setView={setView}
+        maps={maps}
+        currentMapId={currentMapId}
         onSwitchMap={setCurrentMapId}
         onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-        onOpenTags={() => setTagManagerOpen(true)} onOpenShare={() => setShareOpen(true)} onSignOut={signOut}
+        onOpenTags={() => setTagManagerOpen(true)}
+        onOpenShare={() => setShareOpen(true)}
+        onSignOut={signOut}
       />
+
       <main>
         {view === 'map' && (
           <section className="panel">
-            <Constellation pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId}>
-              <SearchAndFilters floating mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
-                activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
+            <Constellation
+              pins={visiblePins}
+              tags={tags}
+              matchesFilter={matchesFilter}
+              onOpenPin={setViewingPinId}
+            >
+              <SearchAndFilters
+                floating
+                mapName={mapDoc.name}
+                search={search}
+                setSearch={setSearch}
+                tags={tags}
+                pins={pins}
+                activeFilters={activeFilters}
+                toggleFilter={toggleFilter}
+                clearFilters={() => setActiveFilters(new Set())}
+              />
             </Constellation>
           </section>
         )}
@@ -155,14 +205,30 @@ export default function App() {
         {view === 'list' && (
           <section className="panel">
             <div style={{ padding: '16px 22px 0' }}>
-              <SearchAndFilters mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
-                activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
+              <SearchAndFilters
+                mapName={mapDoc.name}
+                search={search}
+                setSearch={setSearch}
+                tags={tags}
+                pins={pins}
+                activeFilters={activeFilters}
+                toggleFilter={toggleFilter}
+                clearFilters={() => setActiveFilters(new Set())}
+              />
             </div>
+
             <div className="panel-head">
               <h2>All pins</h2>
               <p>{visiblePins.filter(matchesFilter).length} of {visiblePins.length} shown</p>
             </div>
-            <PinGrid pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId} addedByLabel={addedByLabel} />
+
+            <PinGrid
+              pins={visiblePins}
+              tags={tags}
+              matchesFilter={matchesFilter}
+              onOpenPin={setViewingPinId}
+              addedByLabel={addedByLabel}
+            />
           </section>
         )}
       </main>
@@ -171,7 +237,11 @@ export default function App() {
 
       <PinModal
         open={pinModalOpen || !!prefill}
-        onClose={() => { setPinModalOpen(false); setEditingPin(null); setPrefill(null); }}
+        onClose={() => {
+          setPinModalOpen(false);
+          setEditingPin(null);
+          setPrefill(null);
+        }}
         onSave={handleSave}
         tags={tags}
         initial={editingPin || prefill}
@@ -183,7 +253,10 @@ export default function App() {
         addedByLabel={addedByLabel}
         onClose={() => setViewingPinId(null)}
         onEdit={() => openEdit(viewingPin)}
-        onDelete={() => { deletePin(viewingPin.id); setViewingPinId(null); }}
+        onDelete={() => {
+          deletePin(viewingPin.id);
+          setViewingPinId(null);
+        }}
       />
 
       <ShareModal
