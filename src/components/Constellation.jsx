@@ -1,37 +1,124 @@
+import { useEffect, useRef, useState } from 'react';
+import { loadGoogleMapsCore } from '../lib/googleMaps.js';
+
+/* global google */
+
+// Small SVG dot, matching the old constellation's visited/not-visited look —
+// filled circle for visited, hollow ring for not-visited — now used as a
+// real marker icon instead of an absolutely-positioned div.
+function pinIconUrl(color, visited, size) {
+  const strokeWidth = visited ? 3 : 2.5;
+  const r = (size - strokeWidth * 2) / 2;
+  const c = size / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+    <circle cx="${c}" cy="${c}" r="${r}" fill="${visited ? color : '#fff'}" stroke="${visited ? '#fff' : color}" stroke-width="${strokeWidth}"/>
+  </svg>`;
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+}
+
+/**
+ * Real embedded Google Map. Same props as the old dot-constellation version
+ * (pins, tags, matchesFilter, onOpenPin, children) so App.jsx didn't need
+ * to change at all — only pins with real geo{lat,lng} (i.e. added via the
+ * address autocomplete) can be placed on an actual map; anything without
+ * one is skipped and counted in the legend instead of silently vanishing.
+ */
 export default function Constellation({ pins, tags, matchesFilter, onOpenPin, children }) {
-  return (
-    <div className="constellation">
-      {children /* floating search/filter controls get mounted here by App.jsx */}
-      {pins.map((p) => {
+  const mapDivRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef([]);
+  const [status, setStatus] = useState('loading'); // loading | ready | error
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Create the map once.
+  useEffect(() => {
+    let cancelled = false;
+    loadGoogleMapsCore()
+      .then(({ Map }) => {
+        if (cancelled || !mapDivRef.current || mapRef.current) return;
+        mapRef.current = new Map(mapDivRef.current, {
+          center: { lat: 20, lng: 0 },
+          zoom: 2,
+          streetViewControl: false,
+          fullscreenControl: false,
+          mapTypeControl: false,
+        });
+        setStatus('ready');
+      })
+      .catch((err) => {
+        if (!cancelled) { setStatus('error'); setErrorMsg(err.message); }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Sync markers whenever the pin list, tags, or filter state changes.
+  useEffect(() => {
+    if (status !== 'ready' || !mapRef.current) return;
+    let cancelled = false;
+
+    loadGoogleMapsCore().then(({ Marker }) => {
+      if (cancelled) return;
+
+      markersRef.current.forEach((m) => m.setMap(null));
+      markersRef.current = [];
+
+      const withGeo = pins.filter((p) => p.geo?.lat != null && p.geo?.lng != null);
+      const bounds = new google.maps.LatLngBounds();
+
+      withGeo.forEach((p) => {
         const dimmed = !matchesFilter(p);
         const primary = tags[p.tags?.[0]] || { color: '#5F6368' };
         const visited = (p.rating || 0) > 0;
-        const size = visited ? 16 + p.rating * 3 : 15;
-        const style = {
-          left: `${p.pos?.x ?? 50}%`,
-          top: `${p.pos?.y ?? 50}%`,
-          width: size,
-          height: size,
-          background: visited ? primary.color : '#fff',
-          border: visited ? '3px solid #fff' : `2.5px solid ${primary.color}`,
-        };
-        return (
-          <div key={p.id}>
-            <div
-              className={`pin-dot ${dimmed ? 'dim' : ''}`}
-              style={style}
-              title={p.name + (visited ? '' : ' (not visited yet)')}
-              onClick={() => onOpenPin(p.id)}
-            />
-            <div className="pin-label" style={{ left: `${p.pos?.x ?? 50}%`, top: `${p.pos?.y ?? 50}%`, opacity: dimmed ? 0.18 : 1 }}>
-              {p.name?.length > 16 ? p.name.slice(0, 15) + '…' : p.name}
-            </div>
-          </div>
-        );
-      })}
+        const size = visited ? 22 + p.rating * 3 : 20;
+
+        const marker = new Marker({
+          position: { lat: p.geo.lat, lng: p.geo.lng },
+          map: mapRef.current,
+          title: p.name + (visited ? '' : ' (not visited yet)'),
+          opacity: dimmed ? 0.18 : 1,
+          icon: {
+            url: pinIconUrl(primary.color, visited, size),
+            scaledSize: new google.maps.Size(size, size),
+            anchor: new google.maps.Point(size / 2, size / 2),
+          },
+        });
+        marker.addListener('click', () => onOpenPin(p.id));
+        markersRef.current.push(marker);
+        bounds.extend(marker.getPosition());
+      });
+
+      if (withGeo.length > 0) {
+        mapRef.current.fitBounds(bounds, 60);
+        if (withGeo.length === 1) mapRef.current.setZoom(13);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [pins, tags, matchesFilter, status, onOpenPin]);
+
+  const missingGeoCount = pins.filter((p) => !(p.geo?.lat != null && p.geo?.lng != null)).length;
+
+  return (
+    <div className="constellation">
+      <div ref={mapDivRef} style={{ position: 'absolute', inset: 0, borderRadius: 'inherit' }} />
+
+      {status === 'error' && (
+        <div className="oembed-hint" style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', textAlign: 'center', padding: 24, background: 'var(--surface)',
+        }}>
+          Map failed to load: {errorMsg}
+        </div>
+      )}
+
+      {children /* floating search/filter controls, mounted here by App.jsx */}
+
       <div className="map-legend">
         <span className="legend-item"><span className="legend-dot filled" />Visited</span>
         <span className="legend-item"><span className="legend-dot ring" />Not visited yet</span>
+        {missingGeoCount > 0 && (
+          <span className="legend-item">{missingGeoCount} pin{missingGeoCount === 1 ? '' : 's'} without an address not shown</span>
+        )}
       </div>
     </div>
   );
