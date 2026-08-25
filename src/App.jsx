@@ -15,11 +15,12 @@ import { iconSvg } from './lib/icons.jsx';
 import { latLngToPercent } from './lib/geo.js';
 
 const DEFAULT_TAGS = {
-  activity:   { label: 'Activity',   color: '#EA4335', bg: '#FCE8E6', emoji: '🥾' },
-  holiday:    { label: 'Holiday',    color: '#188038', bg: '#E6F4EA', emoji: '🏖️' },
-  bar:        { label: 'Bar',        color: '#D93069', bg: '#FCE4EC', emoji: '🍸' },
-  cafe:       { label: 'Cafe',       color: '#12B5CB', bg: '#E0F7FA', emoji: '☕' },
-  restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
+activity:   { label: 'Activity',   color: '#EA4335', bg: '#FCE8E6', emoji: '🥾' },
+holiday:    { label: 'Holiday',    color: '#188038', bg: '#E6F4EA', emoji: '🏖️' },
+bar:        { label: 'Bar',        color: '#D93069', bg: '#FCE4EC', emoji: '🍸' },
+cafe:       { label: 'Cafe',       color: '#12B5CB', bg: '#E0F7FA', emoji: '☕' },
+restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
+scenery:    { label: 'Scenic',     color: '#34A853', bg: '#E6F4EA', emoji: '🌄' },
 };
 
 function readShareParams() {
