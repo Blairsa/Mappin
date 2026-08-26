@@ -100,24 +100,31 @@ export default function Constellation({ pins, tags, matchesFilter, onOpenPin, fo
   }, [pins, tags, matchesFilter, status, onOpenPin]);
 
   // Pan/zoom to whatever set of pins the toolbar's city picker asked for.
-  useEffect(() => {
-    if (!focusRequest || status !== 'ready' || !mapRef.current) return;
-    const withGeo = (focusRequest.pins || []).filter((p) => p.geo?.lat != null && p.geo?.lng != null);
-    if (withGeo.length === 0) return;
-if (withGeo.length > 1) {
-  const bounds = new google.maps.LatLngBounds();
-  withGeo.forEach((p) => bounds.extend({ lat: p.geo.lat, lng: p.geo.lng }));
+ useEffect(() => {
+  if (!focusRequest || status !== 'ready' || !mapRef.current) return;
 
-  mapRef.current.fitBounds(bounds, 80);
+  const withGeo = (focusRequest.pins || [])
+    .filter((p) => p.geo?.lat != null && p.geo?.lng != null);
 
-  // Prevent zooming out too far
-  const currentZoom = mapRef.current.getZoom();
-  if (currentZoom < 10) {
-    mapRef.current.setZoom(10);
+  if (withGeo.length === 0) return;
+
+  if (withGeo.length === 1) {
+    const { lat, lng } = withGeo[0].geo;
+    mapRef.current.panTo({ lat, lng });
+    mapRef.current.setZoom(15);
+  } else {
+    const bounds = new google.maps.LatLngBounds();
+    withGeo.forEach((p) => bounds.extend({ lat: p.geo.lat, lng: p.geo.lng }));
+
+    mapRef.current.fitBounds(bounds, 80);
+
+    const currentZoom = mapRef.current.getZoom();
+    if (currentZoom < 10) {
+      mapRef.current.setZoom(10);
+    }
   }
-}
+}, [focusRequest, status]);
 
-  }, [focusRequest, status]);
 
   const missingGeoCount = pins.filter((p) => !(p.geo?.lat != null && p.geo?.lng != null)).length;
 
