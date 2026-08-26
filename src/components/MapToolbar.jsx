@@ -11,20 +11,23 @@ import MapPicker from './MapPicker.jsx';
 export default function MapToolbar({
   search, setSearch, mapName,
   maps, currentMapId, onSwitchMap, onCreateMap,
-  cityCount,
+  pinsByCity, onSelectCity,
   tags, pins, activeFilters, toggleFilter, clearFilters,
   onOpenShare, onOpenTags,
 }) {
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
+  const [citiesOpen, setCitiesOpen] = useState(false);
   const [tagsPanelOpen, setTagsPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const openOnly = (which) => {
     setMapPickerOpen(which === 'map' && !mapPickerOpen);
+    setCitiesOpen(which === 'cities' && !citiesOpen);
     setTagsPanelOpen(which === 'tags' && !tagsPanelOpen);
     setSettingsOpen(which === 'settings' && !settingsOpen);
   };
 
+  const cityNames = Object.keys(pinsByCity).sort();
   const counts = {};
   Object.keys(tags).forEach((k) => { counts[k] = pins.filter((p) => p.tags?.includes(k)).length; });
 
@@ -52,7 +55,25 @@ export default function MapToolbar({
           )}
         </div>
 
-        <div className="pill-btn stat">{cityCount} {cityCount === 1 ? 'City' : 'Cities'}</div>
+        <div style={{ position: 'relative' }}>
+          <button className="pill-btn" onClick={() => openOnly('cities')}>
+            {cityNames.length} {cityNames.length === 1 ? 'City' : 'Cities'} {iconSvg('expand_more')}
+          </button>
+          {citiesOpen && (
+            <div className="map-flyout">
+              <div className="map-flyout-title">Jump to a city</div>
+              {cityNames.length === 0 && (
+                <div style={{ padding: 8, fontSize: 13, color: 'var(--on-surface-var)' }}>No addresses yet</div>
+              )}
+              {cityNames.map((name) => (
+                <button key={name} className="map-flyout-item" onClick={() => { onSelectCity(name); setCitiesOpen(false); }}>
+                  <span style={{ width: 16, flex: 'none' }} />
+                  <span>{name} ({pinsByCity[name].length})</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <button className={`pill-btn ${tagsPanelOpen ? 'active' : ''}`} onClick={() => openOnly('tags')}>
           {iconSvg('label')} Tags
