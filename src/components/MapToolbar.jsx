@@ -14,6 +14,7 @@ export default function MapToolbar({
   pinsByCity, onSelectCity,
   tags, pins, activeFilters, toggleFilter, clearFilters,
   onOpenShare, onOpenTags,
+  onSignOut,
 }) {
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
@@ -84,11 +85,19 @@ export default function MapToolbar({
             {iconSvg('settings')} Settings
           </button>
           {settingsOpen && (
-            <div className="settings-menu">
-              <button onClick={() => { onOpenShare(); setSettingsOpen(false); }}>{iconSvg('share')} Manage sharing</button>
-              <button onClick={() => { onOpenTags(); setSettingsOpen(false); }}>{iconSvg('edit')} Edit tags</button>
-            </div>
-          )}
+  <div className="settings-menu">
+    <button onClick={() => { onOpenShare(); setSettingsOpen(false); }}>
+      {iconSvg('share')} Manage sharing
+    </button>
+    <button onClick={() => { onOpenTags(); setSettingsOpen(false); }}>
+      {iconSvg('edit')} Edit tags
+    </button>
+    <button onClick={() => { onSignOut(); setSettingsOpen(false); }}>
+      {iconSvg('logout')} Log out
+    </button>
+  </div>
+)}
+
         </div>
       </div>
 
