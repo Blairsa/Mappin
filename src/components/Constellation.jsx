@@ -104,14 +104,19 @@ export default function Constellation({ pins, tags, matchesFilter, onOpenPin, fo
     if (!focusRequest || status !== 'ready' || !mapRef.current) return;
     const withGeo = (focusRequest.pins || []).filter((p) => p.geo?.lat != null && p.geo?.lng != null);
     if (withGeo.length === 0) return;
-    if (withGeo.length === 1) {
-      mapRef.current.panTo({ lat: withGeo[0].geo.lat, lng: withGeo[0].geo.lng });
-      mapRef.current.setZoom(14);
-    } else {
-      const bounds = new google.maps.LatLngBounds();
-      withGeo.forEach((p) => bounds.extend({ lat: p.geo.lat, lng: p.geo.lng }));
-      mapRef.current.fitBounds(bounds, 80);
-    }
+if (withGeo.length > 1) {
+  const bounds = new google.maps.LatLngBounds();
+  withGeo.forEach((p) => bounds.extend({ lat: p.geo.lat, lng: p.geo.lng }));
+
+  mapRef.current.fitBounds(bounds, 80);
+
+  // Prevent zooming out too far
+  const currentZoom = mapRef.current.getZoom();
+  if (currentZoom < 10) {
+    mapRef.current.setZoom(10);
+  }
+}
+
   }, [focusRequest, status]);
 
   const missingGeoCount = pins.filter((p) => !(p.geo?.lat != null && p.geo?.lng != null)).length;
