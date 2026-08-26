@@ -3,7 +3,6 @@ import { useAuth } from './hooks/useAuth.js';
 import { useMaps } from './hooks/useMaps.js';
 import { useMap } from './hooks/useMap.js';
 import { usePins } from './hooks/usePins.js';
-import Rail from './components/Rail.jsx';
 import MapToolbar from './components/MapToolbar.jsx';
 import SearchAndFilters from './components/SearchAndFilters.jsx';
 import Constellation from './components/Constellation.jsx';
@@ -47,9 +46,9 @@ function readShareParams() {
   return { title, text, url };
 }
 
-// Rough "distinct places" count for the toolbar stat — not precise city
-// extraction, just the second-to-last comma-separated segment of the
-// address when there is one, otherwise the whole address.
+// Rough "distinct places" grouping for the toolbar's city list — not
+// precise city extraction, just the second-to-last comma-separated segment
+// of the address when there is one, otherwise the whole address.
 function cityOf(address) {
   if (!address) return null;
   const parts = address.split(',').map((s) => s.trim()).filter(Boolean);
@@ -92,6 +91,7 @@ export default function App() {
   const [viewingPinId, setViewingPinId] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [focusRequest, setFocusRequest] = useState(null);
 
   const shareParams = useMemo(readShareParams, []);
   const [prefill, setPrefill] = useState(
@@ -103,9 +103,7 @@ export default function App() {
   // Backfill default tags onto any map that doesn't have any yet. This has
   // to be a hook that runs on every render, unconditionally — the actual
   // conditional logic lives inside the callback, never around the hook
-  // call itself. It must also stay above every early return below: hooks
-  // can never run conditionally, or React's internal bookkeeping breaks
-  // (this is exactly what caused the crash last time).
+  // call itself — and it must stay above every early return below.
   useEffect(() => {
     if (mapDoc && (!mapDoc.tags || !Object.keys(mapDoc.tags).length)) {
       updateTags(DEFAULT_TAGS);
@@ -142,7 +140,13 @@ export default function App() {
     return next;
   });
   const visiblePins = pins.filter(matchesSearch);
-  const cityCount = new Set(pins.map((p) => cityOf(p.address)).filter(Boolean)).size;
+
+  const pinsByCity = {};
+  pins.forEach((p) => {
+    const c = cityOf(p.address);
+    if (!c) return;
+    (pinsByCity[c] = pinsByCity[c] || []).push(p);
+  });
 
   const addedByLabel = (uid) => (uid === user.uid ? (user.displayName || 'You') : 'Collaborator');
 
@@ -163,9 +167,8 @@ export default function App() {
     if (window.location.pathname === '/share') window.history.replaceState({}, '', '/');
   };
 
-  // Lets the Add Pin form create a brand-new tag inline instead of forcing
-  // a trip to Tag Manager first. Returns the new tag's key so the caller
-  // can auto-select it.
+  // Lets the Add Pin form (and now Tag Manager too) create a brand-new tag
+  // inline. Returns the new tag's key so callers can auto-select it.
   const handleCreateTag = async (label) => {
     const trimmed = (label || '').trim();
     if (!trimmed) return null;
@@ -176,21 +179,26 @@ export default function App() {
     return key;
   };
 
+  const handleSelectCity = (cityName) => {
+    setFocusRequest({ pins: pinsByCity[cityName] || [] });
+  };
+
   const viewingPin = pins.find((p) => p.id === viewingPinId);
 
   return (
     <div className="shell">
-      <Rail view={view} setView={setView} onSignOut={signOut} />
-
       <div className="content-area">
         {view === 'map' && (
           <div className="map-stage">
-            <Constellation pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId}>
+            <Constellation
+              pins={visiblePins} tags={tags} matchesFilter={matchesFilter}
+              onOpenPin={setViewingPinId} focusRequest={focusRequest}
+            >
               <MapToolbar
                 search={search} setSearch={setSearch} mapName={mapDoc.name}
                 maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
                 onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-                cityCount={cityCount}
+                pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
                 tags={tags} pins={pins} activeFilters={activeFilters}
                 toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
                 onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
@@ -214,6 +222,13 @@ export default function App() {
             </section>
           </main>
         )}
+      </div>
+
+      <div className="top-right-controls">
+        <button className="pill-btn" onClick={() => setView(view === 'map' ? 'list' : 'map')}>
+          {iconSvg(view === 'map' ? 'view_list' : 'map')} <span className="btn-label">{view === 'map' ? 'List' : 'Map'}</span>
+        </button>
+        <button className="icon-btn-floating" onClick={signOut} title="Sign out">{iconSvg('logout')}</button>
       </div>
 
       <button className="fab" onClick={openAdd}>{iconSvg('add')}</button>
@@ -253,6 +268,7 @@ export default function App() {
         tags={tags}
         pins={pins}
         onUpdateTags={updateTags}
+        onCreateTag={handleCreateTag}
       />
     </div>
   );
