@@ -191,10 +191,7 @@ async function extractTikTokMeta(url) {
     tags: []
   };
 }
-  }
 
-  runShareFlow();
-}, [shareParams]);
 
 
   // Backfill default tags onto any map that doesn't have any yet. This has
