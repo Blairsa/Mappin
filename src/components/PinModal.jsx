@@ -3,7 +3,7 @@ import { iconSvg } from '../lib/icons.jsx';
 import { enrichFromUrl } from '../lib/oembed.js';
 import AddressAutocomplete from './AddressAutocomplete.jsx';
 
-export default function PinModal({ open, onClose, onSave, tags, initial }) {
+export default function PinModal({ open, onClose, onSave, onCreateTag, tags, initial }) {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [placeId, setPlaceId] = useState(null);
@@ -14,6 +14,7 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
   const [selectedTags, setSelectedTags] = useState([]);
   const [fetching, setFetching] = useState(false);
   const [oembedHint, setOembedHint] = useState('');
+  const [newTagInput, setNewTagInput] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -36,6 +37,12 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
 
   const toggleTag = (key) =>
     setSelectedTags((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  const submitNewTag = async () => {
+    const key = await onCreateTag(newTagInput);
+    if (key) setSelectedTags((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    setNewTagInput('');
+  };
 
   const handleFetch = async () => {
     if (!url) return;
@@ -121,6 +128,16 @@ export default function PinModal({ open, onClose, onSave, tags, initial }) {
                   </span>
                 );
               })}
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input
+                type="text" value={newTagInput} onChange={(e) => setNewTagInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitNewTag(); } }}
+                placeholder="Add a new tag…" style={{ flex: 1 }}
+              />
+              <button className="btn btn-tonal" type="button" onClick={submitNewTag} disabled={!newTagInput.trim()}>
+                Add
+              </button>
             </div>
           </div>
           <div className="field">
