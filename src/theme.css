@@ -58,11 +58,19 @@ button{font-family:inherit;}
 .pill-btn svg{width:15px;height:15px;fill:currentColor;flex:none;}
 .chip-panel{display:flex;gap:8px;overflow-x:auto;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);padding:10px;border-radius:16px;box-shadow:var(--shadow-1);}
 @media (max-width: 480px) {
-  .settings-menu {
-    right: 8px;
-    left: auto;
-    transform: translateX(0);
-  }
+ .settings-menu {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  background: var(--surface);
+  border: 1px solid var(--outline-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  padding: 6px;
+  min-width: 190px;
+  z-index: 100;
+}
+
 }
 
 .settings-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:none;background:none;padding:8px;border-radius:8px;cursor:pointer;font-size:13.5px;font-family:inherit;color:var(--on-surface);}
