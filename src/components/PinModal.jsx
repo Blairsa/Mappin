@@ -50,8 +50,8 @@ export default function PinModal({ open, onClose, onSave, onCreateTag, tags, ini
     const result = await enrichFromUrl(url);
     setFetching(false);
     if (result.supported) {
-      if (!name) setName(result.title || name);
-      setOembedHint(`Pulled from ${result.platform}: "${result.title}" — you may still want to tidy the name.`);
+      if (!note) setnote(result.title || note);
+      setOembedHint(`Pulled from ${result.platform}: "${result.title}" — you may still want to tidy the note.`);
     } else {
       setOembedHint(result.reason);
     }
