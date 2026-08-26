@@ -93,12 +93,109 @@ export default function App() {
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null);
 
-  const shareParams = useMemo(readShareParams, []);
-  const [prefill, setPrefill] = useState(
-    shareParams && (shareParams.url || shareParams.text)
-      ? { name: shareParams.title, note: shareParams.text, url: shareParams.url, rating: 0, tags: [] }
-      : null
+  async function extractInstagramMeta(url) {
+  const resp = await fetch(
+    `https://instagram-looter2.p.rapidapi.com/post?url=${encodeURIComponent(url)}`,
+    {
+      headers: {
+        "x-rapidapi-key": "808ec7e9eamshfff190e67e34057p11da80jsn99f4dfa106b4",
+        "x-rapidapi-host": "instagram-looter2.p.rapidapi.com"
+      }
+    }
   );
+
+  const data = await resp.json();
+
+  const loc = data.location;
+  const caption = data.edge_media_to_caption?.edges?.[0]?.node?.text || "";
+
+  return {
+    name: loc?.name || "Untitled place",
+    geo: loc ? { lat: loc.lat, lng: loc.lng } : null,
+    note: caption,
+    url,
+    rating: 0,
+    tags: []
+  };
+}
+
+  const shareParams = useMemo(readShareParams, []);
+useEffect(() => {
+  async function runShareFlow() {
+    if (!shareParams?.url) return;
+
+    // 1. Unshorten
+    const finalUrl = await resolveUrl(shareParams.url);
+
+    // 2. Detect platform
+    let meta = null;
+
+    if (finalUrl.includes("instagram.com")) {
+      meta = await extractInstagramMeta(finalUrl);
+    }
+
+    if (finalUrl.includes("tiktok.com")) {
+      meta = await extractTikTokMeta(finalUrl);
+    }
+
+    // 3. Prefill + open modal
+    if (meta) {
+      setPrefill(meta);
+      setPinModalOpen(true);
+    }
+  }
+
+  runShareFlow();
+}, [shareParams]);
+
+  async function resolveUrl(url) {
+  const resp = await fetch(
+    `https://free-url-un-shortener.p.rapidapi.com/url?url=${encodeURIComponent(url)}`,
+    {
+      headers: {
+        "x-rapidapi-key": "808ec7e9eamshfff190e67e34057p11da80jsn99f4dfa106b4",
+        "x-rapidapi-host": "free-url-un-shortener.p.rapidapi.com"
+      }
+    }
+  );
+
+  const data = await resp.json();
+  return data?.resolved_url || url;
+}
+async function extractTikTokMeta(url) {
+  const resp = await fetch(
+    `https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`,
+    {
+      headers: {
+        "x-rapidapi-key": "808ec7e9eamshfff190e67e34057p11da80jsn99f4dfa106b4",
+        "x-rapidapi-host": "tiktok-scraper7.p.rapidapi.com"
+      }
+    }
+  );
+
+  const data = await resp.json();
+  const d = data.data;
+
+  const locExtra = d.anchors?.[0]?.extra ? JSON.parse(d.anchors[0].extra) : null;
+  const coords = locExtra?.location;
+
+  const caption = d.content_desc?.join("\n").trim() || d.title || "";
+
+  return {
+    name: locExtra?.Name || d.keyword || "Untitled place",
+    geo: coords ? { lat: parseFloat(coords.lat), lng: parseFloat(coords.lng) } : null,
+    address: locExtra?.formatted_address || locExtra?.fallback_address || "",
+    note: caption,
+    url,
+    rating: 0,
+    tags: []
+  };
+}
+  }
+
+  runShareFlow();
+}, [shareParams]);
+
 
   // Backfill default tags onto any map that doesn't have any yet. This has
   // to be a hook that runs on every render, unconditionally — the actual
