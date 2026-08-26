@@ -7,14 +7,17 @@ import { loadGoogleMapsCore } from '../lib/googleMaps.js';
 // filled circle for visited, hollow ring for not-visited — now used as a
 // real marker icon instead of an absolutely-positioned div.
 function pinIconUrl(color, visited, size) {
-  const strokeWidth = visited ? 3 : 2.5;
-  const r = (size - strokeWidth * 2) / 2;
-  const c = size / 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
-    <circle cx="${c}" cy="${c}" r="${r}" fill="${visited ? color : '#fff'}" stroke="${visited ? '#fff' : color}" stroke-width="${strokeWidth}"/>
-  </svg>`;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
+      <path d="M32 2C18 2 7 13 7 27c0 17 25 35 25 35s25-18 25-35C57 13 46 2 32 2z"
+            fill="${visited ? color : '#fff'}"
+            stroke="${visited ? '#fff' : color}"
+            stroke-width="3"/>
+    </svg>
+  `;
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
+
 
 /**
  * Real embedded Google Map. Same props as the old dot-constellation version
@@ -79,7 +82,7 @@ export default function Constellation({ pins, tags, matchesFilter, onOpenPin, fo
           icon: {
             url: pinIconUrl(primary.color, visited, size),
             scaledSize: new google.maps.Size(size, size),
-            anchor: new google.maps.Point(size / 2, size / 2),
+            anchor: new google.maps.Point(size / 2, size),
           },
         });
         marker.addListener('click', () => onOpenPin(p.id));
