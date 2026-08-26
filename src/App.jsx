@@ -194,15 +194,17 @@ export default function App() {
               pins={visiblePins} tags={tags} matchesFilter={matchesFilter}
               onOpenPin={setViewingPinId} focusRequest={focusRequest}
             >
-              <MapToolbar
-                search={search} setSearch={setSearch} mapName={mapDoc.name}
-                maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
-                onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-                pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
-                tags={tags} pins={pins} activeFilters={activeFilters}
-                toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
-                onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
-              />
+             <MapToolbar
+  search={search} setSearch={setSearch} mapName={mapDoc.name}
+  maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
+  onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
+  pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
+  tags={tags} pins={pins} activeFilters={activeFilters}
+  toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
+  onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
+  onSignOut={signOut}   // ← add this
+/>
+
             </Constellation>
           </div>
         )}
@@ -228,7 +230,6 @@ export default function App() {
         <button className="pill-btn" onClick={() => setView(view === 'map' ? 'list' : 'map')}>
           {iconSvg(view === 'map' ? 'view_list' : 'map')} <span className="btn-label">{view === 'map' ? 'List' : 'Map'}</span>
         </button>
-        <button className="icon-btn-floating" onClick={signOut} title="Sign out">{iconSvg('logout')}</button>
       </div>
 
       <button className="fab" onClick={openAdd}>{iconSvg('add')}</button>
