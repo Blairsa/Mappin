@@ -92,6 +92,7 @@ export default function App() {
   const [shareOpen, setShareOpen] = useState(false);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null);
+  const [prefill, setPrefill] = useState(null);
 
   async function extractInstagramMeta(url) {
   const resp = await fetch(
