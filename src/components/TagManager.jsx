@@ -4,11 +4,18 @@ import { iconSvg } from '../lib/icons.jsx';
 const COLOR_SWATCHES = ['#EA4335','#D93069','#5E35B1','#3F51B5','#1A73E8','#12B5CB','#009688','#188038','#7CB342','#F9AB00','#FB8C00','#6D4C41'];
 const EMOJI_SWATCHES = ['🥾','🍽️','☕','🍸','🍷','🎁','🏖️','🏔️','🌙','🚗','📍','🏨'];
 
-export default function TagManager({ open, onClose, tags, pins, onUpdateTags }) {
+export default function TagManager({ open, onClose, tags, pins, onUpdateTags, onCreateTag }) {
   const [editingKey, setEditingKey] = useState(null);
+  const [newTagInput, setNewTagInput] = useState('');
   if (!open) return null;
 
   const setStyle = (key, changes) => onUpdateTags({ ...tags, [key]: { ...tags[key], ...changes } });
+
+  const submitNewTag = async () => {
+    if (!newTagInput.trim()) return;
+    await onCreateTag(newTagInput);
+    setNewTagInput('');
+  };
 
   return (
     <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -26,6 +33,19 @@ export default function TagManager({ open, onClose, tags, pins, onUpdateTags }) 
               <button className="icon-btn" onClick={() => setEditingKey(key)}>{iconSvg('edit')}</button>
             </div>
           ))}
+
+          {!editingKey && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+              <input
+                type="text" value={newTagInput} onChange={(e) => setNewTagInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitNewTag(); } }}
+                placeholder="Add a new tag…" style={{ flex: 1 }}
+              />
+              <button className="btn btn-tonal" type="button" onClick={submitNewTag} disabled={!newTagInput.trim()}>
+                Add
+              </button>
+            </div>
+          )}
 
           {editingKey && (
             <>
