@@ -23,7 +23,7 @@ function pinIconUrl(color, visited, size) {
  * address autocomplete) can be placed on an actual map; anything without
  * one is skipped and counted in the legend instead of silently vanishing.
  */
-export default function Constellation({ pins, tags, matchesFilter, onOpenPin, children }) {
+export default function Constellation({ pins, tags, matchesFilter, onOpenPin, focusRequest, children }) {
   const mapDivRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -95,6 +95,21 @@ export default function Constellation({ pins, tags, matchesFilter, onOpenPin, ch
 
     return () => { cancelled = true; };
   }, [pins, tags, matchesFilter, status, onOpenPin]);
+
+  // Pan/zoom to whatever set of pins the toolbar's city picker asked for.
+  useEffect(() => {
+    if (!focusRequest || status !== 'ready' || !mapRef.current) return;
+    const withGeo = (focusRequest.pins || []).filter((p) => p.geo?.lat != null && p.geo?.lng != null);
+    if (withGeo.length === 0) return;
+    if (withGeo.length === 1) {
+      mapRef.current.panTo({ lat: withGeo[0].geo.lat, lng: withGeo[0].geo.lng });
+      mapRef.current.setZoom(14);
+    } else {
+      const bounds = new google.maps.LatLngBounds();
+      withGeo.forEach((p) => bounds.extend({ lat: p.geo.lat, lng: p.geo.lng }));
+      mapRef.current.fitBounds(bounds, 80);
+    }
+  }, [focusRequest, status]);
 
   const missingGeoCount = pins.filter((p) => !(p.geo?.lat != null && p.geo?.lng != null)).length;
 
