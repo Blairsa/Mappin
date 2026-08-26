@@ -1,31 +1,37 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadGoogleMaps } from '../lib/googleMaps.js';
 
-/**
- * Wraps google.maps.places.PlaceAutocompleteElement — a Web Component,
- * not a plain <input>, so it's mounted imperatively into a container div
- * rather than rendered as JSX. Calls onSelect({ name, address, placeId, lat, lng })
- * when the user picks a prediction.
- */
 export default function AddressAutocomplete({ onSelect }) {
   const containerRef = useRef(null);
+  const onSelectRef = useRef(onSelect);
   const [error, setError] = useState(null);
 
+  // Keep latest onSelect without re-running the effect
   useEffect(() => {
-    let element;
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
+  useEffect(() => {
     let cancelled = false;
+    let element;
 
     loadGoogleMaps()
       .then(({ PlaceAutocompleteElement }) => {
         if (cancelled || !containerRef.current) return;
+
+        // Create once
         element = new PlaceAutocompleteElement();
         containerRef.current.innerHTML = '';
         containerRef.current.appendChild(element);
 
+        // Attach listener once
         element.addEventListener('gmp-select', async ({ placePrediction }) => {
           const place = placePrediction.toPlace();
-          await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'id'] });
-          onSelect({
+          await place.fetchFields({
+            fields: ['displayName', 'formattedAddress', 'location', 'id'],
+          });
+
+          onSelectRef.current({
             name: place.displayName,
             address: place.formattedAddress,
             placeId: place.id,
@@ -36,11 +42,14 @@ export default function AddressAutocomplete({ onSelect }) {
       })
       .catch((err) => setError(err.message));
 
-    return () => { cancelled = true; };
-  }, [onSelect]);
+    return () => {
+      cancelled = true;
+    };
+  }, []); // ← runs once only
 
   if (error) {
     return <div className="oembed-hint">Address lookup unavailable: {error}</div>;
   }
+
   return <div ref={containerRef} className="places-autocomplete-mount" />;
 }
