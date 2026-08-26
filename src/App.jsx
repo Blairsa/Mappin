@@ -4,6 +4,7 @@ import { useMaps } from './hooks/useMaps.js';
 import { useMap } from './hooks/useMap.js';
 import { usePins } from './hooks/usePins.js';
 import Rail from './components/Rail.jsx';
+import MapToolbar from './components/MapToolbar.jsx';
 import SearchAndFilters from './components/SearchAndFilters.jsx';
 import Constellation from './components/Constellation.jsx';
 import PinGrid from './components/PinGrid.jsx';
@@ -14,34 +15,51 @@ import TagManager from './components/TagManager.jsx';
 import { iconSvg } from './lib/icons.jsx';
 import { latLngToPercent } from './lib/geo.js';
 
-
 const DEFAULT_TAGS = {
-activity:   { label: 'Activity',   color: '#EA4335', bg: '#FCE8E6', emoji: '🥾' },
-holiday:    { label: 'Holiday',    color: '#188038', bg: '#E6F4EA', emoji: '🏖️' },
-bar:        { label: 'Bar',        color: '#D93069', bg: '#FCE4EC', emoji: '🍸' },
-cafe:       { label: 'Cafe',       color: '#12B5CB', bg: '#E0F7FA', emoji: '☕' },
-restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
-scenery:    { label: 'Scenic',     color: '#34A853', bg: '#E6F4EA', emoji: '🌄' },
+  activity:   { label: 'Activity',   color: '#EA4335', bg: '#FCE8E6', emoji: '🥾' },
+  holiday:    { label: 'Holiday',    color: '#188038', bg: '#E6F4EA', emoji: '🏖️' },
+  bar:        { label: 'Bar',        color: '#D93069', bg: '#FCE4EC', emoji: '🍸' },
+  cafe:       { label: 'Cafe',       color: '#12B5CB', bg: '#E0F7FA', emoji: '☕' },
+  restaurant: { label: 'Restaurant', color: '#F9AB00', bg: '#FEF7E0', emoji: '🍽️' },
 };
 
+const TAG_COLOR_POOL = ['#EA4335','#D93069','#5E35B1','#3F51B5','#1A73E8','#12B5CB','#009688','#188038','#7CB342','#F9AB00','#FB8C00','#6D4C41'];
+
+function slugifyTag(label) {
+  return label.trim().toLowerCase().replace(/[^a-z0-9]+(.)?/g, (_, c) => (c ? c.toUpperCase() : ''));
+}
+
+// Parses whatever the OS share sheet handed over at /share?title=&text=&url=
+// per the GET share_target in public/manifest.json. Many apps — TikTok and
+// Instagram included — don't populate the separate "url" param at all; they
+// just dump the caption and link together into "text". So if url comes back
+// empty, pull the first http(s) link out of text instead of losing it.
 function readShareParams() {
-  if (typeof window === 'undefined') return null;
   if (window.location.pathname !== '/share') return null;
   const params = new URLSearchParams(window.location.search);
-  return {
-    title: params.get('title') || '',
-    text: params.get('text') || '',
-    url: params.get('url') || '',
-  };
+  const title = params.get('title') || '';
+  const text = params.get('text') || '';
+  let url = params.get('url') || '';
+  if (!url && text) {
+    const match = text.match(/https?:\/\/\S+/);
+    if (match) url = match[0];
+  }
+  return { title, text, url };
+}
+
+// Rough "distinct places" count for the toolbar stat — not precise city
+// extraction, just the second-to-last comma-separated segment of the
+// address when there is one, otherwise the whole address.
+function cityOf(address) {
+  if (!address) return null;
+  const parts = address.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length >= 2) return parts[parts.length - 2];
+  return parts[0] || null;
 }
 
 const LAST_MAP_KEY = 'mappin.lastMapId';
 
 export default function App() {
-  // -----------------------------
-  // ALL HOOKS MUST BE ABOVE ANY RETURN
-  // -----------------------------
-
   const { user, signIn, signOut } = useAuth();
   const { maps, loading: mapsLoading, createMap } = useMaps(user?.email);
 
@@ -50,6 +68,8 @@ export default function App() {
     if (currentMapId) localStorage.setItem(LAST_MAP_KEY, currentMapId);
   }, [currentMapId]);
 
+  // If the remembered map isn't in this user's list (or none remembered yet),
+  // fall back to their first map. If they have none at all, create one.
   useEffect(() => {
     if (!user || mapsLoading) return;
     if (maps.length === 0) {
@@ -80,16 +100,18 @@ export default function App() {
       : null
   );
 
-  // THIS HOOK MUST BE ABOVE ANY RETURN
+  // Backfill default tags onto any map that doesn't have any yet. This has
+  // to be a hook that runs on every render, unconditionally — the actual
+  // conditional logic lives inside the callback, never around the hook
+  // call itself. It must also stay above every early return below: hooks
+  // can never run conditionally, or React's internal bookkeeping breaks
+  // (this is exactly what caused the crash last time).
   useEffect(() => {
     if (mapDoc && (!mapDoc.tags || !Object.keys(mapDoc.tags).length)) {
       updateTags(DEFAULT_TAGS);
     }
-  }, [mapDoc?.id, mapDoc?.tags, updateTags]);
-
-  // -----------------------------
-  // SAFE CONDITIONAL RETURNS
-  // -----------------------------
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapDoc]);
 
   if (user === undefined) return <div className="center-screen">Loading…</div>;
 
@@ -106,10 +128,6 @@ export default function App() {
     return <div className="center-screen">Loading your maps…</div>;
   }
 
-  // -----------------------------
-  // MAIN RENDER
-  // -----------------------------
-
   const tags = mapDoc.tags && Object.keys(mapDoc.tags).length ? mapDoc.tags : DEFAULT_TAGS;
 
   const matchesSearch = (p) => {
@@ -117,134 +135,97 @@ export default function App() {
     if (!q) return true;
     return [p.name, p.address, p.note].filter(Boolean).some((f) => f.toLowerCase().includes(q));
   };
-
-  const matchesFilter = (p) =>
-    activeFilters.size === 0 || p.tags?.some((t) => activeFilters.has(t));
-
-  const toggleFilter = (key) =>
-    setActiveFilters((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
+  const matchesFilter = (p) => activeFilters.size === 0 || p.tags?.some((t) => activeFilters.has(t));
+  const toggleFilter = (key) => setActiveFilters((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
   const visiblePins = pins.filter(matchesSearch);
+  const cityCount = new Set(pins.map((p) => cityOf(p.address)).filter(Boolean)).size;
 
-  const addedByLabel = (uid) =>
-    uid === user.uid ? (user.displayName || 'You') : 'Collaborator';
+  const addedByLabel = (uid) => (uid === user.uid ? (user.displayName || 'You') : 'Collaborator');
 
-  const openAdd = () => {
-    setEditingPin(null);
-    setPinModalOpen(true);
-  };
-
-  const openEdit = (pin) => {
-    setEditingPin(pin);
-    setPrefill(null);
-    setPinModalOpen(true);
-    setViewingPinId(null);
-  };
+  const openAdd = () => { setEditingPin(null); setPinModalOpen(true); };
+  const openEdit = (pin) => { setEditingPin(pin); setPrefill(null); setPinModalOpen(true); setViewingPinId(null); };
 
   const handleSave = async (data) => {
     const pos = data.geo
       ? latLngToPercent(data.geo.lat, data.geo.lng)
-      : editingPin?.pos || { x: 20 + Math.random() * 60, y: 20 + Math.random() * 55 };
-
+      : (editingPin?.pos || { x: 20 + Math.random() * 60, y: 20 + Math.random() * 55 });
     if (editingPin) {
       await updatePin(editingPin.id, { ...data, pos });
     } else {
       await addPin({ ...data, pos }, user.uid);
     }
-
     setPinModalOpen(false);
     setPrefill(null);
+    if (window.location.pathname === '/share') window.history.replaceState({}, '', '/');
+  };
 
-    if (window.location.pathname === '/share') {
-      window.history.replaceState({}, '', '/');
-    }
+  // Lets the Add Pin form create a brand-new tag inline instead of forcing
+  // a trip to Tag Manager first. Returns the new tag's key so the caller
+  // can auto-select it.
+  const handleCreateTag = async (label) => {
+    const trimmed = (label || '').trim();
+    if (!trimmed) return null;
+    const key = slugifyTag(trimmed) || `tag${Date.now()}`;
+    if (tags[key]) return key;
+    const color = TAG_COLOR_POOL[Object.keys(tags).length % TAG_COLOR_POOL.length];
+    await updateTags({ ...tags, [key]: { label: trimmed, color, bg: color + '22', emoji: '📍' } });
+    return key;
   };
 
   const viewingPin = pins.find((p) => p.id === viewingPinId);
 
   return (
     <div className="shell">
-      <Rail
-        view={view}
-        setView={setView}
-        maps={maps}
-        currentMapId={currentMapId}
-        onSwitchMap={setCurrentMapId}
-        onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-        onOpenTags={() => setTagManagerOpen(true)}
-        onOpenShare={() => setShareOpen(true)}
-        onSignOut={signOut}
-      />
+      <Rail view={view} setView={setView} onSignOut={signOut} />
 
-      <main>
+      <div className="content-area">
         {view === 'map' && (
-          <section className="panel">
-            <Constellation
-              pins={visiblePins}
-              tags={tags}
-              matchesFilter={matchesFilter}
-              onOpenPin={setViewingPinId}
-            >
-              <SearchAndFilters
-                floating
-                mapName={mapDoc.name}
-                search={search}
-                setSearch={setSearch}
-                tags={tags}
-                pins={pins}
-                activeFilters={activeFilters}
-                toggleFilter={toggleFilter}
-                clearFilters={() => setActiveFilters(new Set())}
+          <div className="map-stage">
+            <Constellation pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId}>
+              <MapToolbar
+                search={search} setSearch={setSearch} mapName={mapDoc.name}
+                maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
+                onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
+                cityCount={cityCount}
+                tags={tags} pins={pins} activeFilters={activeFilters}
+                toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
+                onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
               />
             </Constellation>
-          </section>
+          </div>
         )}
 
         {view === 'list' && (
-          <section className="panel">
-            <div style={{ padding: '16px 22px 0' }}>
-              <SearchAndFilters
-                mapName={mapDoc.name}
-                search={search}
-                setSearch={setSearch}
-                tags={tags}
-                pins={pins}
-                activeFilters={activeFilters}
-                toggleFilter={toggleFilter}
-                clearFilters={() => setActiveFilters(new Set())}
-              />
-            </div>
-
-            <div className="panel-head">
-              <h2>All pins</h2>
-              <p>{visiblePins.filter(matchesFilter).length} of {visiblePins.length} shown</p>
-            </div>
-
-            <PinGrid
-              pins={visiblePins}
-              tags={tags}
-              matchesFilter={matchesFilter}
-              onOpenPin={setViewingPinId}
-              addedByLabel={addedByLabel}
-            />
-          </section>
+          <main className="list-stage">
+            <section className="panel">
+              <div style={{ padding: '16px 22px 0' }}>
+                <SearchAndFilters mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
+                  activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
+              </div>
+              <div className="panel-head">
+                <h2>All pins</h2>
+                <p>{visiblePins.filter(matchesFilter).length} of {visiblePins.length} shown</p>
+              </div>
+              <PinGrid pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId} addedByLabel={addedByLabel} />
+            </section>
+          </main>
         )}
-      </main>
+      </div>
 
       <button className="fab" onClick={openAdd}>{iconSvg('add')}</button>
 
       <PinModal
         open={pinModalOpen || !!prefill}
         onClose={() => {
-          setPinModalOpen(false);
-          setEditingPin(null);
-          setPrefill(null);
+          setPinModalOpen(false); setEditingPin(null); setPrefill(null);
+          if (window.location.pathname === '/share') window.history.replaceState({}, '', '/');
         }}
         onSave={handleSave}
+        onCreateTag={handleCreateTag}
         tags={tags}
         initial={editingPin || prefill}
       />
@@ -255,10 +236,7 @@ export default function App() {
         addedByLabel={addedByLabel}
         onClose={() => setViewingPinId(null)}
         onEdit={() => openEdit(viewingPin)}
-        onDelete={() => {
-          deletePin(viewingPin.id);
-          setViewingPinId(null);
-        }}
+        onDelete={() => { deletePin(viewingPin.id); setViewingPinId(null); }}
       />
 
       <ShareModal
