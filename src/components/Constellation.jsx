@@ -6,17 +6,21 @@ import { loadGoogleMapsCore } from '../lib/googleMaps.js';
 // Small SVG dot, matching the old constellation's visited/not-visited look —
 // filled circle for visited, hollow ring for not-visited — now used as a
 // real marker icon instead of an absolutely-positioned div.
-function pinIconUrl(color, visited, size) {
+function pinIconUrl(color, emoji, size) {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
       <path d="M32 2C18 2 7 13 7 27c0 17 25 35 25 35s25-18 25-35C57 13 46 2 32 2z"
-            fill="${visited ? color : '#fff'}"
-            stroke="${visited ? '#fff' : color}"
+            fill="${color}"
+            stroke="#fff"
             stroke-width="3"/>
+      <text x="32" y="38" font-size="28" text-anchor="middle" dominant-baseline="middle">
+        ${emoji}
+      </text>
     </svg>
   `;
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
+
 
 
 /**
@@ -80,7 +84,7 @@ export default function Constellation({ pins, tags, matchesFilter, onOpenPin, fo
           title: p.name + (visited ? '' : ' (not visited yet)'),
           opacity: dimmed ? 0.18 : 1,
           icon: {
-            url: pinIconUrl(primary.color, visited, size),
+            url: pinIconUrl(primary.color, primary.emoji, size),
             scaledSize: new google.maps.Size(size, size),
             anchor: new google.maps.Point(size / 2, size),
           },
