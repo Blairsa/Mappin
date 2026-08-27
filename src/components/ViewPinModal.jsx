@@ -132,8 +132,8 @@ export default function ViewPinModal({ pin, tags, addedByLabel, onClose, onEdit,
     <button className="btn btn-primary" onClick={onClose}>Close</button>
   </div>
 
-</div> {/* end modal */}
-</div> {/* end overlay */}
+</div>
+</div>
 );
 }
 
