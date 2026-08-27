@@ -7,6 +7,11 @@ import PinModal from './PinModal.jsx';
  * whatever's needed to show the Add Pin form as fast as possible, save,
  * and hand control back to whatever app the share came from.
  *
+ * Speed fix: the enrichment lookups below (unshorten + scrape) are capped
+ * at ENRICH_TIMEOUT_MS. If they haven't come back by then, the form opens
+ * anyway with whatever the OS share sheet gave us directly — a slow or
+ * rate-limited third-party API no longer means a multi-second blank wait.
+ *
  * NOTE on the Instagram/TikTok lookups below: these call third-party
  * RapidAPI scrapers, not official platform APIs. Relocated from App.jsx
  * as-is for this fix — see the chat note on why this approach carries
@@ -14,12 +19,14 @@ import PinModal from './PinModal.jsx';
  */
 
 const RAPIDAPI_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
-// ⚠️ Moving this to an env var does NOT hide it — Vite bakes VITE_-prefixed
-// vars into the shipped JS just like a hardcoded string would be. It's
-// still fully visible to anyone inspecting the deployed site. The only way
-// to actually keep this key private is a server-side proxy (e.g. a Cloud
-// Function) that the client calls instead of RapidAPI directly. Not built
-// here — flagging so this isn't mistaken for a fix.
+const ENRICH_TIMEOUT_MS = 1200;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
 
 async function resolveUrl(url) {
   const resp = await fetch(`https://free-url-un-shortener.p.rapidapi.com/url?url=${encodeURIComponent(url)}`, {
@@ -75,29 +82,33 @@ export default function ShareCapture({ shareParams, tags, onCreateTag, onSave })
     let cancelled = false;
 
     async function run() {
-      if (!shareParams?.url) {
-        if (!cancelled) {
-          setPrefill({ name: shareParams?.title || '', note: shareParams?.text || '', url: '', rating: 0, tags: [] });
-          setResolving(false);
-        }
+      const rawUrl = shareParams?.url || '';
+      const fallback = { name: shareParams?.title || '', note: shareParams?.text || '', url: rawUrl, rating: 0, tags: [] };
+
+      if (!rawUrl) {
+        if (!cancelled) { setPrefill(fallback); setResolving(false); }
         return;
       }
+
       try {
-        const finalUrl = await resolveUrl(shareParams.url);
-        let meta = null;
-        if (finalUrl.includes('instagram.com')) meta = await extractInstagramMeta(finalUrl);
-        else if (finalUrl.includes('tiktok.com')) meta = await extractTikTokMeta(finalUrl);
-        if (!cancelled) {
-          setPrefill(meta || { name: shareParams.title || '', note: shareParams.text || '', url: finalUrl, rating: 0, tags: [] });
-        }
+        const enrichPromise = (async () => {
+          // Instagram/TikTok share links are usually already canonical —
+          // only spend a round-trip unshortening if it doesn't already
+          // look like one of them.
+          const looksCanonical = /instagram\.com|tiktok\.com/.test(rawUrl);
+          const finalUrl = looksCanonical ? rawUrl : await resolveUrl(rawUrl);
+          if (finalUrl.includes('instagram.com')) return await extractInstagramMeta(finalUrl);
+          if (finalUrl.includes('tiktok.com')) return await extractTikTokMeta(finalUrl);
+          return null;
+        })();
+
+        const meta = await withTimeout(enrichPromise, ENRICH_TIMEOUT_MS);
+        if (!cancelled) setPrefill(meta || fallback);
       } catch {
-        // Scraper/unshorten call failed (blocked, rate-limited, endpoint
-        // changed — any of these are plausible with unofficial APIs).
-        // Fall back to whatever the OS share sheet gave us directly rather
-        // than losing the share entirely.
-        if (!cancelled) {
-          setPrefill({ name: shareParams.title || '', note: shareParams.text || '', url: shareParams.url, rating: 0, tags: [] });
-        }
+        // Scraper/unshorten call failed outright (blocked, rate-limited,
+        // endpoint changed) — fall back to the raw share data rather than
+        // losing the share entirely.
+        if (!cancelled) setPrefill(fallback);
       } finally {
         if (!cancelled) setResolving(false);
       }
