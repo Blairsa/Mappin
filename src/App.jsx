@@ -11,6 +11,7 @@ import PinModal from './components/PinModal.jsx';
 import ViewPinModal from './components/ViewPinModal.jsx';
 import ShareModal from './components/ShareModal.jsx';
 import TagManager from './components/TagManager.jsx';
+import ShareCapture from './components/ShareCapture.jsx';
 import { iconSvg } from './lib/icons.jsx';
 import { latLngToPercent } from './lib/geo.js';
 
@@ -80,8 +81,14 @@ export default function App() {
     }
   }, [user, mapsLoading, maps, currentMapId, createMap]);
 
+  const isShareRoute = window.location.pathname === '/share';
+  const shareParams = useMemo(readShareParams, []);
+
   const { mapDoc, addCollaborator, removeCollaborator, updateTags } = useMap(currentMapId);
-  const { pins, addPin, updatePin, deletePin } = usePins(currentMapId);
+  // Share flow only ever writes ONE new pin — no reason to download the
+  // whole pins collection just to do that, so the subscription is skipped
+  // entirely on that path.
+  const { pins, addPin, updatePin, deletePin } = usePins(currentMapId, { enabled: !isShareRoute });
 
   const [view, setView] = useState('map');
   const [search, setSearch] = useState('');
@@ -92,108 +99,6 @@ export default function App() {
   const [shareOpen, setShareOpen] = useState(false);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState(null);
-  const [prefill, setPrefill] = useState(null);
-
-  async function extractInstagramMeta(url) {
-  const resp = await fetch(
-    `https://instagram-looter2.p.rapidapi.com/post?url=${encodeURIComponent(url)}`,
-    {
-      headers: {
-        "x-rapidapi-key": "808ec7e9eamshfff190e67e34057p11da80jsn99f4dfa106b4",
-        "x-rapidapi-host": "instagram-looter2.p.rapidapi.com"
-      }
-    }
-  );
-
-  const data = await resp.json();
-
-  const loc = data.location;
-  const caption = data.edge_media_to_caption?.edges?.[0]?.node?.text || "";
-
-  return {
-    name: loc?.name || "Untitled place",
-    geo: loc ? { lat: loc.lat, lng: loc.lng } : null,
-    note: caption,
-    url,
-    rating: 0,
-    tags: []
-  };
-}
-
-  const shareParams = useMemo(readShareParams, []);
-useEffect(() => {
-  async function runShareFlow() {
-    if (!shareParams?.url) return;
-
-    // 1. Unshorten
-    const finalUrl = await resolveUrl(shareParams.url);
-
-    // 2. Detect platform
-    let meta = null;
-
-    if (finalUrl.includes("instagram.com")) {
-      meta = await extractInstagramMeta(finalUrl);
-    }
-
-    if (finalUrl.includes("tiktok.com")) {
-      meta = await extractTikTokMeta(finalUrl);
-    }
-
-    // 3. Prefill + open modal
-    if (meta) {
-      setPrefill(meta);
-      setPinModalOpen(true);
-    }
-  }
-
-  runShareFlow();
-}, [shareParams]);
-
-  async function resolveUrl(url) {
-  const resp = await fetch(
-    `https://free-url-un-shortener.p.rapidapi.com/url?url=${encodeURIComponent(url)}`,
-    {
-      headers: {
-        "x-rapidapi-key": "808ec7e9eamshfff190e67e34057p11da80jsn99f4dfa106b4",
-        "x-rapidapi-host": "free-url-un-shortener.p.rapidapi.com"
-      }
-    }
-  );
-
-  const data = await resp.json();
-  return data?.resolved_url || url;
-}
-async function extractTikTokMeta(url) {
-  const resp = await fetch(
-    `https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`,
-    {
-      headers: {
-        "x-rapidapi-key": "808ec7e9eamshfff190e67e34057p11da80jsn99f4dfa106b4",
-        "x-rapidapi-host": "tiktok-scraper7.p.rapidapi.com"
-      }
-    }
-  );
-
-  const data = await resp.json();
-  const d = data.data;
-
-  const locExtra = d.anchors?.[0]?.extra ? JSON.parse(d.anchors[0].extra) : null;
-  const coords = locExtra?.location;
-
-  const caption = d.content_desc?.join("\n").trim() || d.title || "";
-
-  return {
-    name: locExtra?.Name || d.keyword || "Untitled place",
-    geo: coords ? { lat: parseFloat(coords.lat), lng: parseFloat(coords.lng) } : null,
-    address: locExtra?.formatted_address || locExtra?.fallback_address || "",
-    note: caption,
-    url,
-    rating: 0,
-    tags: []
-  };
-}
-
-
 
   // Backfill default tags onto any map that doesn't have any yet. This has
   // to be a hook that runs on every render, unconditionally — the actual
@@ -223,6 +128,36 @@ async function extractTikTokMeta(url) {
 
   const tags = mapDoc.tags && Object.keys(mapDoc.tags).length ? mapDoc.tags : DEFAULT_TAGS;
 
+  // Lets the Add Pin form (and Tag Manager) create a brand-new tag inline.
+  // Defined before the share-route branch below, since ShareCapture needs it too.
+  const handleCreateTag = async (label) => {
+    const trimmed = (label || '').trim();
+    if (!trimmed) return null;
+    const key = slugifyTag(trimmed) || `tag${Date.now()}`;
+    if (tags[key]) return key;
+    const color = TAG_COLOR_POOL[Object.keys(tags).length % TAG_COLOR_POOL.length];
+    await updateTags({ ...tags, [key]: { label: trimmed, color, bg: color + '22', emoji: '📍' } });
+    return key;
+  };
+
+  // The entire point of this branch: nothing below it — no Constellation,
+  // no Google Maps JS, no pin list — ever renders or loads on /share.
+  if (isShareRoute) {
+    return (
+      <ShareCapture
+        shareParams={shareParams}
+        tags={tags}
+        onCreateTag={handleCreateTag}
+        onSave={(data) => {
+          const pos = data.geo
+            ? latLngToPercent(data.geo.lat, data.geo.lng)
+            : { x: 20 + Math.random() * 60, y: 20 + Math.random() * 55 };
+          return addPin({ ...data, pos }, user.uid);
+        }}
+      />
+    );
+  }
+
   const matchesSearch = (p) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -246,7 +181,7 @@ async function extractTikTokMeta(url) {
   const addedByLabel = (uid) => (uid === user.uid ? (user.displayName || 'You') : 'Collaborator');
 
   const openAdd = () => { setEditingPin(null); setPinModalOpen(true); };
-  const openEdit = (pin) => { setEditingPin(pin); setPrefill(null); setPinModalOpen(true); setViewingPinId(null); };
+  const openEdit = (pin) => { setEditingPin(pin); setPinModalOpen(true); setViewingPinId(null); };
 
   const handleSave = async (data) => {
     const pos = data.geo
@@ -258,20 +193,6 @@ async function extractTikTokMeta(url) {
       await addPin({ ...data, pos }, user.uid);
     }
     setPinModalOpen(false);
-    setPrefill(null);
-    if (window.location.pathname === '/share') window.history.replaceState({}, '', '/');
-  };
-
-  // Lets the Add Pin form (and now Tag Manager too) create a brand-new tag
-  // inline. Returns the new tag's key so callers can auto-select it.
-  const handleCreateTag = async (label) => {
-    const trimmed = (label || '').trim();
-    if (!trimmed) return null;
-    const key = slugifyTag(trimmed) || `tag${Date.now()}`;
-    if (tags[key]) return key;
-    const color = TAG_COLOR_POOL[Object.keys(tags).length % TAG_COLOR_POOL.length];
-    await updateTags({ ...tags, [key]: { label: trimmed, color, bg: color + '22', emoji: '📍' } });
-    return key;
   };
 
   const handleSelectCity = (cityName) => {
@@ -289,17 +210,16 @@ async function extractTikTokMeta(url) {
               pins={visiblePins} tags={tags} matchesFilter={matchesFilter}
               onOpenPin={setViewingPinId} focusRequest={focusRequest}
             >
-             <MapToolbar
-  search={search} setSearch={setSearch} mapName={mapDoc.name}
-  maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
-  onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-  pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
-  tags={tags} pins={pins} activeFilters={activeFilters}
-  toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
-  onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
-  onSignOut={signOut}   // ← add this
-/>
-
+              <MapToolbar
+                search={search} setSearch={setSearch} mapName={mapDoc.name}
+                maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
+                onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
+                pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
+                tags={tags} pins={pins} activeFilters={activeFilters}
+                toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
+                onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
+                onSignOut={signOut}
+              />
             </Constellation>
           </div>
         )}
@@ -330,15 +250,12 @@ async function extractTikTokMeta(url) {
       <button className="fab" onClick={openAdd}>{iconSvg('add')}</button>
 
       <PinModal
-        open={pinModalOpen || !!prefill}
-        onClose={() => {
-          setPinModalOpen(false); setEditingPin(null); setPrefill(null);
-          if (window.location.pathname === '/share') window.history.replaceState({}, '', '/');
-        }}
+        open={pinModalOpen}
+        onClose={() => { setPinModalOpen(false); setEditingPin(null); }}
         onSave={handleSave}
         onCreateTag={handleCreateTag}
         tags={tags}
-        initial={editingPin || prefill}
+        initial={editingPin}
       />
 
       <ViewPinModal
