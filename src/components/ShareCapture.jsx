@@ -1,37 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PinModal from './PinModal.jsx';
 
 /**
  * The whole point of this component: it's the ONLY thing that renders on
  * the /share route. No Constellation, no Google Maps JS, no pin list — just
- * whatever's needed to show the Add Pin form as fast as possible, save,
- * and hand control back to whatever app the share came from.
+ * whatever's needed to show the Add Pin form as fast as possible.
  *
- * Speed fix: the enrichment lookups below (unshorten + scrape) are capped
- * at ENRICH_TIMEOUT_MS. If they haven't come back by then, the form opens
- * anyway with whatever the OS share sheet gave us directly — a slow or
- * rate-limited third-party API no longer means a multi-second blank wait.
+ * Speed + correctness: the form opens IMMEDIATELY with the raw title/text/
+ * link from the OS share sheet — never blocked on the lookups below. Those
+ * run in the background for as long as they take (no artificial timeout —
+ * a previous version raced this against a 1.2s clock, which meant slower
+ * RapidAPI responses got cut off before they ever resolved, making the
+ * scrapers look broken when they were just running normally). If a lookup
+ * succeeds, a small banner offers to apply it — never auto-applied, so it
+ * can never silently overwrite something you've already started typing.
  *
  * NOTE on the Instagram/TikTok lookups below: these call third-party
- * RapidAPI scrapers, not official platform APIs. Relocated from App.jsx
- * as-is for this fix — see the chat note on why this approach carries
- * real ToS and reliability risk, and why the API key needs rotating.
+ * RapidAPI scrapers, not official platform APIs — see the earlier chat
+ * note on the ToS/reliability risk and the exposed-key issue.
  */
 
 const RAPIDAPI_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
-const ENRICH_TIMEOUT_MS = 1200;
-
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
-}
 
 async function resolveUrl(url) {
   const resp = await fetch(`https://free-url-un-shortener.p.rapidapi.com/url?url=${encodeURIComponent(url)}`, {
     headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'free-url-un-shortener.p.rapidapi.com' },
   });
+  if (!resp.ok) throw new Error(`unshorten failed: ${resp.status}`);
   const data = await resp.json();
   return data?.resolved_url || url;
 }
@@ -40,10 +35,12 @@ async function extractInstagramMeta(url) {
   const resp = await fetch(`https://instagram-looter2.p.rapidapi.com/post?url=${encodeURIComponent(url)}`, {
     headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'instagram-looter2.p.rapidapi.com' },
   });
+  if (!resp.ok) throw new Error(`instagram lookup failed: ${resp.status}`);
   const data = await resp.json();
   const loc = data.location;
   const caption = data.edge_media_to_caption?.edges?.[0]?.node?.text || '';
   return {
+    platform: 'Instagram',
     name: loc?.name || 'Untitled place',
     geo: loc ? { lat: loc.lat, lng: loc.lng } : null,
     note: caption,
@@ -57,12 +54,14 @@ async function extractTikTokMeta(url) {
   const resp = await fetch(`https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`, {
     headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com' },
   });
+  if (!resp.ok) throw new Error(`tiktok lookup failed: ${resp.status}`);
   const data = await resp.json();
   const d = data.data;
   const locExtra = d.anchors?.[0]?.extra ? JSON.parse(d.anchors[0].extra) : null;
   const coords = locExtra?.location;
   const caption = d.content_desc?.join('\n').trim() || d.title || '';
   return {
+    platform: 'TikTok',
     name: locExtra?.Name || d.keyword || 'Untitled place',
     geo: coords ? { lat: parseFloat(coords.lat), lng: parseFloat(coords.lng) } : null,
     address: locExtra?.formatted_address || locExtra?.fallback_address || '',
@@ -73,50 +72,49 @@ async function extractTikTokMeta(url) {
   };
 }
 
-export default function ShareCapture({ shareParams, tags, onCreateTag, onSave }) {
-  const [prefill, setPrefill] = useState(null);
-  const [resolving, setResolving] = useState(true);
+export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
+  const rawFallback = useMemo(() => ({
+    name: shareParams?.title || '',
+    note: shareParams?.text || '',
+    url: shareParams?.url || '',
+    rating: 0,
+    tags: [],
+  }), [shareParams]);
+
+  const [prefill, setPrefill] = useState(rawFallback);
+  const [modalKey, setModalKey] = useState('raw'); // forces a clean remount only when the user explicitly applies a suggestion
+  const [suggestion, setSuggestion] = useState(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const rawUrl = shareParams?.url;
+    if (!rawUrl) return;
 
     async function run() {
-      const rawUrl = shareParams?.url || '';
-      const fallback = { name: shareParams?.title || '', note: shareParams?.text || '', url: rawUrl, rating: 0, tags: [] };
-
-      if (!rawUrl) {
-        if (!cancelled) { setPrefill(fallback); setResolving(false); }
-        return;
-      }
-
       try {
-        const enrichPromise = (async () => {
-          // Instagram/TikTok share links are usually already canonical —
-          // only spend a round-trip unshortening if it doesn't already
-          // look like one of them.
-          const looksCanonical = /instagram\.com|tiktok\.com/.test(rawUrl);
-          const finalUrl = looksCanonical ? rawUrl : await resolveUrl(rawUrl);
-          if (finalUrl.includes('instagram.com')) return await extractInstagramMeta(finalUrl);
-          if (finalUrl.includes('tiktok.com')) return await extractTikTokMeta(finalUrl);
-          return null;
-        })();
-
-        const meta = await withTimeout(enrichPromise, ENRICH_TIMEOUT_MS);
-        if (!cancelled) setPrefill(meta || fallback);
-      } catch {
-        // Scraper/unshorten call failed outright (blocked, rate-limited,
-        // endpoint changed) — fall back to the raw share data rather than
-        // losing the share entirely.
-        if (!cancelled) setPrefill(fallback);
-      } finally {
-        if (!cancelled) setResolving(false);
+        const looksCanonical = /instagram\.com|tiktok\.com/.test(rawUrl);
+        const finalUrl = looksCanonical ? rawUrl : await resolveUrl(rawUrl);
+        let meta = null;
+        if (finalUrl.includes('instagram.com')) meta = await extractInstagramMeta(finalUrl);
+        else if (finalUrl.includes('tiktok.com')) meta = await extractTikTokMeta(finalUrl);
+        if (!cancelled && meta) setSuggestion(meta);
+      } catch (err) {
+        // Visible in devtools so a failure here is actually diagnosable
+        // next time, instead of silently looking like "nothing happened".
+        console.error('Share enrichment failed:', err);
       }
     }
 
     run();
     return () => { cancelled = true; };
   }, [shareParams]);
+
+  const applySuggestion = () => {
+    setPrefill(suggestion);
+    setModalKey('enriched'); // remount PinModal so it re-reads the new initial values
+    setSuggestion(null);
+  };
 
   const finishAndClose = () => {
     window.history.replaceState({}, '', '/');
@@ -132,10 +130,6 @@ export default function ShareCapture({ shareParams, tags, onCreateTag, onSave })
     finishAndClose();
   };
 
-  if (resolving) {
-    return <div className="center-screen">Reading link…</div>;
-  }
-
   if (saved) {
     return (
       <div className="center-screen">
@@ -148,7 +142,28 @@ export default function ShareCapture({ shareParams, tags, onCreateTag, onSave })
 
   return (
     <div className="center-screen">
+      {maps.length > 1 && (
+        <div className="field" style={{ width: '100%', maxWidth: 420, margin: '0 auto 10px' }}>
+          <label>Save to</label>
+          <select value={currentMapId} onChange={(e) => onSwitchMap(e.target.value)}>
+            {maps.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {suggestion && (
+        <div className="oembed-hint" style={{
+          background: 'var(--blue-bg)', color: 'var(--blue)', padding: '10px 16px',
+          borderRadius: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ flex: 1 }}>Found more details from {suggestion.platform}</span>
+          <button className="btn btn-tonal" style={{ padding: '6px 12px' }} onClick={applySuggestion}>Use these</button>
+          <button className="btn-text" style={{ padding: '6px 8px' }} onClick={() => setSuggestion(null)}>Dismiss</button>
+        </div>
+      )}
       <PinModal
+        key={modalKey}
         open
         onClose={finishAndClose}
         onSave={handleSave}
