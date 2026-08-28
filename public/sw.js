@@ -4,13 +4,24 @@
 // IndexedDB, on its own terms. This service worker explicitly leaves
 // Google's own domains alone so it never interferes with Firestore's
 // real-time sync or the Maps/Places APIs.
-const CACHE_NAME = 'mappin-shell-v1';
+const CACHE_NAME = 'mappin-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) =>
+        // Individually, not cache.addAll() — addAll() is all-or-nothing,
+        // so a single failed fetch (a bad path, a transient network blip)
+        // would fail the WHOLE install and the service worker would never
+        // activate at all. This way one bad asset just doesn't get cached,
+        // instead of taking installability down with it.
+        Promise.all(
+          APP_SHELL.map((url) =>
+            cache.add(url).catch((err) => console.warn('SW precache failed for', url, err))
+          )
+        )
+      )
       .then(() => self.skipWaiting())
   );
 });
