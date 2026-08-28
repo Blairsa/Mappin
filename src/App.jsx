@@ -1,19 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './hooks/useAuth.js';
 import { useMaps } from './hooks/useMaps.js';
 import { useMap } from './hooks/useMap.js';
 import { usePins } from './hooks/usePins.js';
-import MapToolbar from './components/MapToolbar.jsx';
-import SearchAndFilters from './components/SearchAndFilters.jsx';
-import Constellation from './components/Constellation.jsx';
-import PinGrid from './components/PinGrid.jsx';
 import PinModal from './components/PinModal.jsx';
-import ViewPinModal from './components/ViewPinModal.jsx';
-import ShareModal from './components/ShareModal.jsx';
-import TagManager from './components/TagManager.jsx';
 import ShareCapture from './components/ShareCapture.jsx';
 import { iconSvg } from './lib/icons.jsx';
 import { latLngToPercent } from './lib/geo.js';
+
+// Lazy-loaded: none of these are needed on /share, so on that route their
+// JS is never even downloaded, not just "not rendered". This is the actual
+// fix for the share flow loading the whole app's code — everything above
+// this comment is a normal static import because /share needs it
+// immediately; everything below is deferred.
+const Constellation = lazy(() => import('./components/Constellation.jsx'));
+const MapToolbar = lazy(() => import('./components/MapToolbar.jsx'));
+const SearchAndFilters = lazy(() => import('./components/SearchAndFilters.jsx'));
+const PinGrid = lazy(() => import('./components/PinGrid.jsx'));
+const ViewPinModal = lazy(() => import('./components/ViewPinModal.jsx'));
+const ShareModal = lazy(() => import('./components/ShareModal.jsx'));
+const TagManager = lazy(() => import('./components/TagManager.jsx'));
 
 const DEFAULT_TAGS = {
   activity:   { label: 'Activity',   color: '#EA4335', bg: '#FCE8E6', emoji: '🥾' },
@@ -141,12 +147,16 @@ export default function App() {
   };
 
   // The entire point of this branch: nothing below it — no Constellation,
-  // no Google Maps JS, no pin list — ever renders or loads on /share.
+  // no Google Maps JS, no pin list — ever renders OR gets its JS downloaded
+  // on /share, since it's all behind React.lazy() above.
   if (isShareRoute) {
     return (
       <ShareCapture
         shareParams={shareParams}
         tags={tags}
+        maps={maps}
+        currentMapId={currentMapId}
+        onSwitchMap={setCurrentMapId}
         onCreateTag={handleCreateTag}
         onSave={(data) => {
           const pos = data.geo
@@ -202,87 +212,89 @@ export default function App() {
   const viewingPin = pins.find((p) => p.id === viewingPinId);
 
   return (
-    <div className="shell">
-      <div className="content-area">
-        {view === 'map' && (
-          <div className="map-stage">
-            <Constellation
-              pins={visiblePins} tags={tags} matchesFilter={matchesFilter}
-              onOpenPin={setViewingPinId} focusRequest={focusRequest}
-            >
-              <MapToolbar
-                search={search} setSearch={setSearch} mapName={mapDoc.name}
-                maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
-                onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
-                pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
-                tags={tags} pins={pins} activeFilters={activeFilters}
-                toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
-                onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
-                onSignOut={signOut}
-              />
-            </Constellation>
-          </div>
-        )}
+    <Suspense fallback={<div className="center-screen">Loading…</div>}>
+      <div className="shell">
+        <div className="content-area">
+          {view === 'map' && (
+            <div className="map-stage">
+              <Constellation
+                pins={visiblePins} tags={tags} matchesFilter={matchesFilter}
+                onOpenPin={setViewingPinId} focusRequest={focusRequest}
+              >
+                <MapToolbar
+                  search={search} setSearch={setSearch} mapName={mapDoc.name}
+                  maps={maps} currentMapId={currentMapId} onSwitchMap={setCurrentMapId}
+                  onCreateMap={(name) => createMap(user.uid, user.email, name).then(setCurrentMapId)}
+                  pinsByCity={pinsByCity} onSelectCity={handleSelectCity}
+                  tags={tags} pins={pins} activeFilters={activeFilters}
+                  toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())}
+                  onOpenShare={() => setShareOpen(true)} onOpenTags={() => setTagManagerOpen(true)}
+                  onSignOut={signOut}
+                />
+              </Constellation>
+            </div>
+          )}
 
-        {view === 'list' && (
-          <main className="list-stage">
-            <section className="panel">
-              <div style={{ padding: '16px 22px 0' }}>
-                <SearchAndFilters mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
-                  activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
-              </div>
-              <div className="panel-head">
-                <h2>All pins</h2>
-                <p>{visiblePins.filter(matchesFilter).length} of {visiblePins.length} shown</p>
-              </div>
-              <PinGrid pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId} addedByLabel={addedByLabel} />
-            </section>
-          </main>
-        )}
+          {view === 'list' && (
+            <main className="list-stage">
+              <section className="panel">
+                <div style={{ padding: '16px 22px 0' }}>
+                  <SearchAndFilters mapName={mapDoc.name} search={search} setSearch={setSearch} tags={tags} pins={pins}
+                    activeFilters={activeFilters} toggleFilter={toggleFilter} clearFilters={() => setActiveFilters(new Set())} />
+                </div>
+                <div className="panel-head">
+                  <h2>All pins</h2>
+                  <p>{visiblePins.filter(matchesFilter).length} of {visiblePins.length} shown</p>
+                </div>
+                <PinGrid pins={visiblePins} tags={tags} matchesFilter={matchesFilter} onOpenPin={setViewingPinId} addedByLabel={addedByLabel} />
+              </section>
+            </main>
+          )}
+        </div>
+
+        <div className="top-right-controls">
+          <button className="pill-btn" onClick={() => setView(view === 'map' ? 'list' : 'map')}>
+            {iconSvg(view === 'map' ? 'view_list' : 'map')} <span className="btn-label">{view === 'map' ? 'List' : 'Map'}</span>
+          </button>
+        </div>
+
+        <button className="fab" onClick={openAdd}>{iconSvg('add')}</button>
+
+        <PinModal
+          open={pinModalOpen}
+          onClose={() => { setPinModalOpen(false); setEditingPin(null); }}
+          onSave={handleSave}
+          onCreateTag={handleCreateTag}
+          tags={tags}
+          initial={editingPin}
+        />
+
+        <ViewPinModal
+          pin={viewingPin}
+          tags={tags}
+          addedByLabel={addedByLabel}
+          onClose={() => setViewingPinId(null)}
+          onEdit={() => openEdit(viewingPin)}
+          onDelete={() => { deletePin(viewingPin.id); setViewingPinId(null); }}
+        />
+
+        <ShareModal
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          mapDoc={mapDoc}
+          onAddCollaborator={addCollaborator}
+          onRemoveCollaborator={removeCollaborator}
+        />
+
+        <TagManager
+          open={tagManagerOpen}
+          onClose={() => setTagManagerOpen(false)}
+          tags={tags}
+          pins={pins}
+          onUpdateTags={updateTags}
+          onCreateTag={handleCreateTag}
+        />
       </div>
-
-      <div className="top-right-controls">
-        <button className="pill-btn" onClick={() => setView(view === 'map' ? 'list' : 'map')}>
-          {iconSvg(view === 'map' ? 'view_list' : 'map')} <span className="btn-label">{view === 'map' ? 'List' : 'Map'}</span>
-        </button>
-      </div>
-
-      <button className="fab" onClick={openAdd}>{iconSvg('add')}</button>
-
-      <PinModal
-        open={pinModalOpen}
-        onClose={() => { setPinModalOpen(false); setEditingPin(null); }}
-        onSave={handleSave}
-        onCreateTag={handleCreateTag}
-        tags={tags}
-        initial={editingPin}
-      />
-
-      <ViewPinModal
-        pin={viewingPin}
-        tags={tags}
-        addedByLabel={addedByLabel}
-        onClose={() => setViewingPinId(null)}
-        onEdit={() => openEdit(viewingPin)}
-        onDelete={() => { deletePin(viewingPin.id); setViewingPinId(null); }}
-      />
-
-      <ShareModal
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        mapDoc={mapDoc}
-        onAddCollaborator={addCollaborator}
-        onRemoveCollaborator={removeCollaborator}
-      />
-
-      <TagManager
-        open={tagManagerOpen}
-        onClose={() => setTagManagerOpen(false)}
-        tags={tags}
-        pins={pins}
-        onUpdateTags={updateTags}
-        onCreateTag={handleCreateTag}
-      />
-    </div>
+    </Suspense>
   );
 }
