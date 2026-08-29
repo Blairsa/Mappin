@@ -57,20 +57,29 @@ async function extractTikTokMeta(url) {
   if (!resp.ok) throw new Error(`tiktok lookup failed: ${resp.status}`);
   const data = await resp.json();
   const d = data.data;
-  const locExtra = d.anchors?.[0]?.extra ? JSON.parse(d.anchors[0].extra) : null;
+
+  // The location lives on whichever anchor has component_key "anchor_poi" —
+  // don't assume it's anchors[0], other anchor types (templates, etc.) can
+  // come first.
+  const poiAnchor = d.anchors?.find((a) => a.component_key === 'anchor_poi');
+  const locExtra = poiAnchor?.extra ? JSON.parse(poiAnchor.extra) : null;
   const coords = locExtra?.location;
-  const caption = d.content_desc?.join('\n').trim() || d.title || '';
+
   return {
     platform: 'TikTok',
-    name: locExtra?.Name || d.keyword || 'Untitled place',
+    // Title -> the place, not the caption.
+    name: locExtra?.Name || poiAnchor?.keyword || 'Untitled place',
     geo: coords ? { lat: parseFloat(coords.lat), lng: parseFloat(coords.lng) } : null,
     address: locExtra?.formatted_address || locExtra?.fallback_address || '',
-    note: caption,
+    // Description -> the caption text. It's in `title`, not `content_desc`
+    // (content_desc isn't reliably an array on this scraper).
+    note: d.title || '',
     url,
     rating: 0,
     tags: [],
   };
 }
+
 
 export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
   const rawFallback = useMemo(() => ({
