@@ -7,77 +7,24 @@ import PinModal from './PinModal.jsx';
  * whatever's needed to show the Add Pin form as fast as possible.
  *
  * Speed + correctness: the form opens IMMEDIATELY with the raw title/text/
- * link from the OS share sheet — never blocked on the lookups below. Those
- * run in the background for as long as they take (no artificial timeout —
+ * link from the OS share sheet — never blocked on the lookup below. It
+ * runs in the background for as long as it takes (no artificial timeout —
  * a previous version raced this against a 1.2s clock, which meant slower
- * RapidAPI responses got cut off before they ever resolved, making the
- * scrapers look broken when they were just running normally). If a lookup
- * succeeds, a small banner offers to apply it — never auto-applied, so it
- * can never silently overwrite something you've already started typing.
+ * responses got cut off before they ever resolved). If it succeeds, a
+ * small banner offers to apply it — never auto-applied, so it can never
+ * silently overwrite something you've already started typing.
  *
- * NOTE on the Instagram/TikTok lookups below: these call third-party
- * RapidAPI scrapers, not official platform APIs — see the earlier chat
- * note on the ToS/reliability risk and the exposed-key issue.
+ * NOTE: the actual Instagram/TikTok scraping + link-unshortening now
+ * happens server-side in the enrichShare Cloud Function (functions/index.js)
+ * — this component just calls that one endpoint. This keeps the RapidAPI
+ * key out of the browser bundle entirely, and lets the function follow
+ * TikTok's vm.tiktok.com redirects with a proper User-Agent server-side,
+ * which a client-side fetch can't reliably do.
  */
 
-const RAPIDAPI_KEY = import.meta.env.VITE_RAPIDAPI_KEY;
-
-async function resolveUrl(url) {
-  const resp = await fetch(`https://free-url-un-shortener.p.rapidapi.com/url?url=${encodeURIComponent(url)}`, {
-    headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'free-url-un-shortener.p.rapidapi.com' },
-  });
-  if (!resp.ok) throw new Error(`unshorten failed: ${resp.status}`);
-  const data = await resp.json();
-  return data?.resolved_url || url;
-}
-
-async function extractInstagramMeta(url) {
-  const resp = await fetch(`https://instagram-looter2.p.rapidapi.com/post?url=${encodeURIComponent(url)}`, {
-    headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'instagram-looter2.p.rapidapi.com' },
-  });
-  if (!resp.ok) throw new Error(`instagram lookup failed: ${resp.status}`);
-  const data = await resp.json();
-  const loc = data.location;
-  const caption = data.edge_media_to_caption?.edges?.[0]?.node?.text || '';
-  return {
-    platform: 'Instagram',
-    name: loc?.name || 'Untitled place',
-    geo: loc ? { lat: loc.lat, lng: loc.lng } : null,
-    note: caption,
-    url,
-    rating: 0,
-    tags: [],
-  };
-}
-async function extractTikTokMeta(url) {
-  const resp = await fetch(`https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`, {
-    headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com' },
-  });
-  if (!resp.ok) throw new Error(`tiktok lookup failed: ${resp.status}`);
-  const data = await resp.json();
-  const d = data.data;
-
-  // The location lives on whichever anchor has component_key "anchor_poi" —
-  // don't assume it's anchors[0], other anchor types (templates, etc.) can
-  // come first.
-  const poiAnchor = d.anchors?.find((a) => a.component_key === 'anchor_poi');
-  const locExtra = poiAnchor?.extra ? JSON.parse(poiAnchor.extra) : null;
-  const coords = locExtra?.location;
-
-  return {
-    platform: 'TikTok',
-    // Title -> the place, not the caption.
-    name: locExtra?.Name || poiAnchor?.keyword || 'Untitled place',
-    geo: coords ? { lat: parseFloat(coords.lat), lng: parseFloat(coords.lng) } : null,
-    address: locExtra?.formatted_address || locExtra?.fallback_address || '',
-    // Description -> the caption text. It's in `title`, not `content_desc`
-    // (content_desc isn't reliably an array on this scraper).
-    note: d.title || '',
-    url,
-    rating: 0,
-    tags: [],
-  };
-}
+// TODO: replace with your actual deployed function URL, printed in the
+// terminal after `firebase deploy --only functions`.
+const ENRICH_SHARE_URL = 'https://<your-region>-<your-project-id>.cloudfunctions.net/enrichShare';
 
 export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
   const rawFallback = useMemo(() => ({
@@ -100,12 +47,10 @@ export default function ShareCapture({ shareParams, tags, maps, currentMapId, on
 
     async function run() {
       try {
-        const looksCanonical = /instagram\.com|tiktok\.com/.test(rawUrl);
-        const finalUrl = looksCanonical ? rawUrl : await resolveUrl(rawUrl);
-        let meta = null;
-        if (finalUrl.includes('instagram.com')) meta = await extractInstagramMeta(finalUrl);
-        else if (finalUrl.includes('tiktok.com')) meta = await extractTikTokMeta(finalUrl);
-        if (!cancelled && meta) setSuggestion(meta);
+        const resp = await fetch(`${ENRICH_SHARE_URL}?url=${encodeURIComponent(rawUrl)}`);
+        if (!resp.ok) return; // 422 = unsupported link, not an error worth logging
+        const meta = await resp.json();
+        if (!cancelled) setSuggestion(meta);
       } catch (err) {
         // Visible in devtools so a failure here is actually diagnosable
         // next time, instead of silently looking like "nothing happened".
