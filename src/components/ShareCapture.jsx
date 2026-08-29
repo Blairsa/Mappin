@@ -49,7 +49,6 @@ async function extractInstagramMeta(url) {
     tags: [],
   };
 }
-
 async function extractTikTokMeta(url) {
   const resp = await fetch(`https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`, {
     headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': 'tiktok-scraper7.p.rapidapi.com' },
@@ -79,7 +78,6 @@ async function extractTikTokMeta(url) {
     tags: [],
   };
 }
-
 
 export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
   const rawFallback = useMemo(() => ({
