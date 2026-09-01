@@ -22,8 +22,6 @@ import PinModal from './PinModal.jsx';
  * which a client-side fetch can't reliably do.
  */
 
-// TODO: replace with your actual deployed function URL, printed in the
-// terminal after `firebase deploy --only functions`.
 const ENRICH_SHARE_URL = 'https://us-central1-mappin-14d4d.cloudfunctions.net/enrichShare';
 
 export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
@@ -61,6 +59,17 @@ export default function ShareCapture({ shareParams, tags, maps, currentMapId, on
     run();
     return () => { cancelled = true; };
   }, [shareParams]);
+
+  // The banner renders above PinModal, so once it appears it pushes
+  // everything below it down the page. If you've already scrolled into the
+  // form by the time the (often multi-second, cold-start) lookup resolves,
+  // the banner ends up above your current scroll position — easy to miss
+  // entirely. Scroll back to the top whenever a suggestion actually lands.
+  useEffect(() => {
+    if (suggestion) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [suggestion]);
 
   const applySuggestion = () => {
     setPrefill(suggestion);
