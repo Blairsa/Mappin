@@ -24,7 +24,7 @@ import PinModal from './PinModal.jsx';
 
 // TODO: replace with your actual deployed function URL, printed in the
 // terminal after `firebase deploy --only functions`.
-const ENRICH_SHARE_URL = 'https://<your-region>-<your-project-id>.cloudfunctions.net/enrichShare';
+const ENRICH_SHARE_URL = 'https://us-central1-mappin-14d4d.cloudfunctions.net/enrichShare';
 
 export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
   const rawFallback = useMemo(() => ({
