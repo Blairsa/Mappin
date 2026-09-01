@@ -3,10 +3,12 @@
 // Firestore's own persistent cache (see src/firebase.js) handles that, via
 // IndexedDB, on its own terms. This service worker explicitly leaves
 // Google's own domains alone so it never interferes with Firestore's
-// real-time sync or the Maps/Places APIs.
+// real-time sync or the Maps/Places APIs, and leaves cloudfunctions.net
+// alone too — enrichShare responses depend on the specific TikTok/Instagram
+// link shared, so caching one URL's response could later be served back
+// incorrectly for a completely different shared link.
 const CACHE_NAME = 'mappin-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
-
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -25,7 +27,6 @@ self.addEventListener('install', (event) => {
       .then(() => self.skipWaiting())
   );
 });
-
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
@@ -33,15 +34,19 @@ self.addEventListener('activate', (event) => {
       .then(() => self.clients.claim())
   );
 });
-
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-
   // Never intercept Google API traffic — Firestore and the Maps/Places
-  // libraries manage their own network behaviour and caching.
-  if (url.hostname.includes('googleapis.com') || url.hostname.includes('google.com')) return;
+  // libraries manage their own network behaviour and caching. Also never
+  // intercept the enrichShare Cloud Function — its response is specific to
+  // whatever link was shared, so caching it could serve stale/wrong data
+  // back for a different link later.
+  if (
+    url.hostname.includes('googleapis.com') ||
+    url.hostname.includes('google.com') ||
+    url.hostname.includes('cloudfunctions.net')
+  ) return;
   if (event.request.method !== 'GET') return;
-
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request)
