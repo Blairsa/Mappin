@@ -27,14 +27,15 @@ jobs:
 
       - run: npm install
         working-directory: functions
-           - name: Deploy Cloud Functions
+
+      - name: Deploy Cloud Functions
         run: |
           echo "$FIREBASE_SERVICE_ACCOUNT" > /tmp/gcp-key.json
           npx firebase-tools deploy --only functions --project mappin-14d4d --force
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          
+
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
