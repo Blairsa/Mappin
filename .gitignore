@@ -1,0 +1,15 @@
+# Environment variables — never commit real secrets/keys
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+functions/node_modules/
+
+# Editor/OS cruft
+.DS_Store
+*.log
