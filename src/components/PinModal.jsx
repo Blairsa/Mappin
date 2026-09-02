@@ -91,9 +91,15 @@ export default function PinModal({ open, onClose, onSave, onCreateTag, tags, ini
               setGeo(lat != null && lng != null ? { lat, lng } : null);
             }} />
             <input
-              type="text" id="name" value={name} onChange={(e) => setName(e.target.value)}
-              placeholder="Or type a custom name…" style={{ marginTop: 8 }}
-            />
+  type="text"
+  id="name"
+  name="title"
+  value={name}
+  onChange={(e) => setName(e.target.value)}
+  placeholder="Or type a custom name…"
+  style={{ marginTop: 8 }}
+/>
+
             {address && <div className="oembed-hint">Address: {address}</div>}
           </div>
           <div className="field">
@@ -111,11 +117,13 @@ export default function PinModal({ open, onClose, onSave, onCreateTag, tags, ini
           <div className="field">
             <label>Description</label>
             <textarea
-              id="note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Why you're saving this, how it went, anything to remember…"
-            />
+  id="note"
+  name="text"
+  value={note}
+  onChange={(e) => setNote(e.target.value)}
+  placeholder="Why you're saving this…"
+/>
+
           </div>
           <div className="field">
             <label>Tags</label>
@@ -143,7 +151,15 @@ export default function PinModal({ open, onClose, onSave, onCreateTag, tags, ini
           </div>
           <div className="field">
             <label>Link (booking, menu, TikTok/YouTube/Instagram post…)</label>
-            <input type="url" id="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+            <input
+  type="url"
+  id="url"
+  name="url"
+  value={url}
+  onChange={(e) => setUrl(e.target.value)}
+  placeholder="https://…"
+/>
+
             <button className="btn-text" style={{ padding: '6px 0' }} onClick={handleFetch} disabled={!url || fetching}>
               {fetching ? 'Fetching…' : 'Fetch details from link'}
             </button>
