@@ -38,26 +38,42 @@ export default function ShareCapture({ shareParams, tags, maps, currentMapId, on
   const [suggestion, setSuggestion] = useState(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
+useEffect(() => {
     let cancelled = false;
     const rawUrl = shareParams?.url;
-    if (!rawUrl) return;
+    console.log('[ShareCapture] effect fired, rawUrl =', rawUrl, 'cancelled at start =', cancelled);
+    if (!rawUrl) {
+      console.log('[ShareCapture] no rawUrl, bailing out');
+      return;
+    }
 
     async function run() {
+      console.log('[ShareCapture] starting fetch to enrichShare…');
       try {
         const resp = await fetch(`${ENRICH_SHARE_URL}?url=${encodeURIComponent(rawUrl)}`);
-        if (!resp.ok) return; // 422 = unsupported link, not an error worth logging
+        console.log('[ShareCapture] fetch resolved, status =', resp.status, 'ok =', resp.ok, 'cancelled =', cancelled);
+        if (!resp.ok) {
+          console.log('[ShareCapture] response not ok, bailing without setting suggestion');
+          return;
+        }
         const meta = await resp.json();
-        if (!cancelled) setSuggestion(meta);
+        console.log('[ShareCapture] parsed meta =', meta, 'cancelled =', cancelled);
+        if (!cancelled) {
+          console.log('[ShareCapture] calling setSuggestion');
+          setSuggestion(meta);
+        } else {
+          console.log('[ShareCapture] cancelled is true — setSuggestion SKIPPED');
+        }
       } catch (err) {
-        // Visible in devtools so a failure here is actually diagnosable
-        // next time, instead of silently looking like "nothing happened".
-        console.error('Share enrichment failed:', err);
+        console.error('[ShareCapture] fetch threw:', err);
       }
     }
 
     run();
-    return () => { cancelled = true; };
+    return () => {
+      console.log('[ShareCapture] cleanup ran — setting cancelled = true');
+      cancelled = true;
+    };
   }, [shareParams]);
 
   // The banner renders above PinModal, so once it appears it pushes
@@ -100,7 +116,7 @@ export default function ShareCapture({ shareParams, tags, maps, currentMapId, on
       </div>
     );
   }
-
+console.log('[ShareCapture] render, suggestion =', suggestion, 'saved =', saved);
   return (
     <div className="center-screen">
       {maps.length > 1 && (
@@ -134,4 +150,5 @@ export default function ShareCapture({ shareParams, tags, maps, currentMapId, on
       />
     </div>
   );
+  
 }
