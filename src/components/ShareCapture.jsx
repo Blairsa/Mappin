@@ -1,103 +1,90 @@
-import { useEffect, useMemo, useState } from 'react';
+// ShareCapture.jsx — full replacement
+import { useEffect, useState } from 'react';
 import PinModal from './PinModal.jsx';
 
-/**
- * The whole point of this component: it's the ONLY thing that renders on
- * the /share route. No Constellation, no Google Maps JS, no pin list — just
- * whatever's needed to show the Add Pin form as fast as possible.
- *
- * Speed + correctness: the form opens IMMEDIATELY with the raw title/text/
- * link from the OS share sheet — never blocked on the lookup below. It
- * runs in the background for as long as it takes (no artificial timeout —
- * a previous version raced this against a 1.2s clock, which meant slower
- * responses got cut off before they ever resolved). If it succeeds, a
- * small banner offers to apply it — never auto-applied, so it can never
- * silently overwrite something you've already started typing.
- *
- * NOTE: the actual Instagram/TikTok scraping + link-unshortening now
- * happens server-side in the enrichShare Cloud Function (functions/index.js)
- * — this component just calls that one endpoint. This keeps the RapidAPI
- * key out of the browser bundle entirely, and lets the function follow
- * TikTok's vm.tiktok.com redirects with a proper User-Agent server-side,
- * which a client-side fetch can't reliably do.
- */
-
 const ENRICH_SHARE_URL = 'https://us-central1-mappin-14d4d.cloudfunctions.net/enrichShare';
+const ENRICH_TIMEOUT_MS = 7000; // safety net — don't wait forever on a hung RapidAPI call
+
+// Captions rarely come as a clean "name" — TikTok/Instagram give you a
+// sentence, then usually a 📍 and a string of hashtags. Everything before
+// the 📍 (or the first sentence, if there's no 📍) is the best guess at
+// something name-like. Only used when the scraper has no real POI name.
+function guessNameFromCaption(text) {
+  if (!text) return '';
+  const beforePin = text.split('📍')[0].trim();
+  const candidate = beforePin || text.trim();
+  const firstSentence = candidate.match(/^[^.!?\n]+[.!?]?/);
+  let name = (firstSentence ? firstSentence[0] : candidate).trim();
+  name = name.replace(/#\w+/g, '').trim(); // strip stray hashtags
+  if (name.length > 80) name = name.slice(0, 80).trim() + '…';
+  return name;
+}
 
 export default function ShareCapture({ shareParams, tags, maps, currentMapId, onSwitchMap, onCreateTag, onSave }) {
-  const rawFallback = useMemo(() => ({
-    name: shareParams?.title || '',
-    note: shareParams?.text || '',
-    url: shareParams?.url || '',
+  const rawUrl = shareParams?.url || '';
+  const rawText = shareParams?.text || '';
+  const rawTitle = shareParams?.title || '';
+
+  // No link to enrich (e.g. shared plain text) — nothing to wait for.
+  const [loading, setLoading] = useState(!!rawUrl);
+  const [prefill, setPrefill] = useState({
+    name: rawTitle,
+    note: rawText,
+    url: rawUrl,
     rating: 0,
     tags: [],
-  }), [shareParams]);
-
-  const [prefill, setPrefill] = useState(rawFallback);
-  const [modalKey, setModalKey] = useState('raw'); // forces a clean remount only when the user explicitly applies a suggestion
-  const [suggestion, setSuggestion] = useState(null);
+    autoSearchQuery: '',
+  });
   const [saved, setSaved] = useState(false);
 
-useEffect(() => {
-    let cancelled = false;
-    const rawUrl = shareParams?.url;
-    console.log('[ShareCapture] effect fired, rawUrl =', rawUrl, 'cancelled at start =', cancelled);
-    if (!rawUrl) {
-      console.log('[ShareCapture] no rawUrl, bailing out');
-      return;
-    }
-
-    async function run() {
-      console.log('[ShareCapture] starting fetch to enrichShare…');
-      try {
-        const resp = await fetch(`${ENRICH_SHARE_URL}?url=${encodeURIComponent(rawUrl)}`);
-        console.log('[ShareCapture] fetch resolved, status =', resp.status, 'ok =', resp.ok, 'cancelled =', cancelled);
-        if (!resp.ok) {
-          console.log('[ShareCapture] response not ok, bailing without setting suggestion');
-          return;
-        }
-        const meta = await resp.json();
-        console.log('[ShareCapture] parsed meta =', meta, 'cancelled =', cancelled);
-        if (!cancelled) {
-          console.log('[ShareCapture] calling setSuggestion');
-          setSuggestion(meta);
-        } else {
-          console.log('[ShareCapture] cancelled is true — setSuggestion SKIPPED');
-        }
-      } catch (err) {
-        console.error('[ShareCapture] fetch threw:', err);
-      }
-    }
-
-    run();
-    return () => {
-      console.log('[ShareCapture] cleanup ran — setting cancelled = true');
-      cancelled = true;
-    };
-  }, [shareParams]);
-
-  // The banner renders above PinModal, so once it appears it pushes
-  // everything below it down the page. If you've already scrolled into the
-  // form by the time the (often multi-second, cold-start) lookup resolves,
-  // the banner ends up above your current scroll position — easy to miss
-  // entirely. Scroll back to the top whenever a suggestion actually lands.
   useEffect(() => {
-    if (suggestion) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  }, [suggestion]);
+    if (!rawUrl) return;
+    let done = false;
 
-  const applySuggestion = () => {
-    setPrefill(suggestion);
-    setModalKey('enriched'); // remount PinModal so it re-reads the new initial values
-    setSuggestion(null);
-  };
+    const timeout = setTimeout(() => {
+      if (!done) {
+        done = true;
+        const name = guessNameFromCaption(rawText);
+        setPrefill((p) => ({ ...p, name: name || p.name }));
+        setLoading(false);
+      }
+    }, ENRICH_TIMEOUT_MS);
+
+    fetch(`${ENRICH_SHARE_URL}?url=${encodeURIComponent(rawUrl)}`)
+      .then((resp) => (resp.ok ? resp.json() : null))
+      .then((meta) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timeout);
+        const name = meta?.name && meta.name !== 'Untitled place'
+          ? meta.name
+          : guessNameFromCaption(meta?.note || rawText);
+        setPrefill({
+          name,
+          note: meta?.note || rawText,
+          url: meta?.url || rawUrl,
+          rating: 0,
+          tags: [],
+          autoSearchQuery: [name, meta?.address].filter(Boolean).join(', '),
+        });
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Share enrichment failed:', err);
+        if (!done) {
+          done = true;
+          clearTimeout(timeout);
+          const name = guessNameFromCaption(rawText);
+          setPrefill((p) => ({ ...p, name: name || p.name }));
+          setLoading(false);
+        }
+      });
+
+    return () => { done = true; clearTimeout(timeout); };
+  }, [rawUrl]);
 
   const finishAndClose = () => {
     window.history.replaceState({}, '', '/');
-    // Best-effort — works for windows opened via the share target in most
-    // Android/Chrome versions. If the browser blocks a script-initiated
-    // close (some do), the message below is the fallback.
     setTimeout(() => window.close(), 300);
   };
 
@@ -116,7 +103,17 @@ useEffect(() => {
       </div>
     );
   }
-console.log('[ShareCapture] render, suggestion =', suggestion, 'saved =', saved);
+
+  if (loading) {
+    return (
+      <div className="center-screen">
+        <div style={{ fontSize: 32 }}>📍</div>
+        <h2>Just a moment…</h2>
+        <p style={{ color: 'var(--on-surface-var)' }}>Grabbing details from your link.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="center-screen">
       {maps.length > 1 && (
@@ -129,19 +126,7 @@ console.log('[ShareCapture] render, suggestion =', suggestion, 'saved =', saved)
           </select>
         </div>
       )}
-      {suggestion && (
-  <div className="oembed-hint" style={{
-    position: 'relative', zIndex: 60,
-    background: 'var(--blue-bg)', color: 'var(--blue)', padding: '10px 16px',
-    borderRadius: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10,
-  }}>
-          <span style={{ flex: 1 }}>Found more details from {suggestion.platform}</span>
-          <button className="btn btn-tonal" style={{ padding: '6px 12px' }} onClick={applySuggestion}>Use these</button>
-          <button className="btn-text" style={{ padding: '6px 8px' }} onClick={() => setSuggestion(null)}>Dismiss</button>
-        </div>
-      )}
       <PinModal
-        key={modalKey}
         open
         onClose={finishAndClose}
         onSave={handleSave}
@@ -151,5 +136,4 @@ console.log('[ShareCapture] render, suggestion =', suggestion, 'saved =', saved)
       />
     </div>
   );
-  
 }
