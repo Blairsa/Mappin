@@ -5,17 +5,16 @@ import PinModal from './PinModal.jsx';
 const ENRICH_SHARE_URL = 'https://us-central1-mappin-14d4d.cloudfunctions.net/enrichShare';
 const ENRICH_TIMEOUT_MS = 7000; // safety net — don't wait forever on a hung RapidAPI call
 
-// Captions rarely come as a clean "name" — TikTok/Instagram give you a
-// sentence, then usually a 📍 and a string of hashtags. Everything before
-// the 📍 (or the first sentence, if there's no 📍) is the best guess at
-// something name-like. Only used when the scraper has no real POI name.
+// Captions rarely come as a clean "name" — but when a 📍 shows up, what
+// follows it is almost always the actual place ("📍 Stoney Middleton,
+// Peak District #peakdistrict..."), cut off at the next hashtag or line
+// break. No 📍 at all (common) falls back to just the first sentence.
 function guessNameFromCaption(text) {
   if (!text) return '';
-  const beforePin = text.split('📍')[0].trim();
-  const candidate = beforePin || text.trim();
-  const firstSentence = candidate.match(/^[^.!?\n]+[.!?]?/);
-  let name = (firstSentence ? firstSentence[0] : candidate).trim();
-  name = name.replace(/#\w+/g, '').trim(); // strip stray hashtags
+  const pinMatch = text.match(/📍\s*([^\n#]+)/);
+  if (!pinMatch) return ''; // no 📍 → don't guess, leave name blank
+
+  let name = pinMatch[1].trim().replace(/[.,;:!?]+$/, '').trim();
   if (name.length > 80) name = name.slice(0, 80).trim() + '…';
   return name;
 }
