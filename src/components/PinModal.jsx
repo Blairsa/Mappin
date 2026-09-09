@@ -84,12 +84,15 @@ export default function PinModal({ open, onClose, onSave, onCreateTag, tags, ini
         <div className="modal-body">
           <div className="field">
             <label>Name</label>
-            <AddressAutocomplete onSelect={({ name: pName, address: pAddr, placeId: pid, lat, lng }) => {
-              setName(pName);
-              setAddress(pAddr);
-              setPlaceId(pid);
-              setGeo(lat != null && lng != null ? { lat, lng } : null);
-            }} />
+            <AddressAutocomplete
+  autoQuery={initial?.autoSearchQuery}
+  onSelect={({ name: pName, address: pAddr, placeId: pid, lat, lng }) => {
+    setName(pName);
+    setAddress(pAddr);
+    setPlaceId(pid);
+    setGeo(lat != null && lng != null ? { lat, lng } : null);
+  }}
+/>
             <input
   type="text"
   id="name"
