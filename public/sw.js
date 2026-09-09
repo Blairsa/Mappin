@@ -7,7 +7,7 @@
 // alone too — enrichShare responses depend on the specific TikTok/Instagram
 // link shared, so caching one URL's response could later be served back
 // incorrectly for a completely different shared link.
-const CACHE_NAME = 'mappin-shell-v2';
+const CACHE_NAME = 'mappin-shell-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', (event) => {
   event.waitUntil(
