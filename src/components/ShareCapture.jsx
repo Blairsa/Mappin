@@ -130,10 +130,11 @@ console.log('[ShareCapture] render, suggestion =', suggestion, 'saved =', saved)
         </div>
       )}
       {suggestion && (
-        <div className="oembed-hint" style={{
-          background: 'var(--blue-bg)', color: 'var(--blue)', padding: '10px 16px',
-          borderRadius: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10,
-        }}>
+  <div className="oembed-hint" style={{
+    position: 'relative', zIndex: 60,
+    background: 'var(--blue-bg)', color: 'var(--blue)', padding: '10px 16px',
+    borderRadius: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 10,
+  }}>
           <span style={{ flex: 1 }}>Found more details from {suggestion.platform}</span>
           <button className="btn btn-tonal" style={{ padding: '6px 12px' }} onClick={applySuggestion}>Use these</button>
           <button className="btn-text" style={{ padding: '6px 8px' }} onClick={() => setSuggestion(null)}>Dismiss</button>
